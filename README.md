@@ -101,7 +101,7 @@ A rating record captures a single act of evaluation: who rated what, on which di
 
 The rating layer is **platform-agnostic**. Item identifiers can be anything: a URL, a content hash, a magnet link, a post ID on another platform. This means the neusnet trust graph can in principle be applied as a curation layer on top of existing platforms — a browser extension that applies neusnet ratings to content on other sites is a natural early application. Within the Bluesky ecosystem specifically, AT Protocol's "feed generator" feature allows third-party algorithms to rank and filter content; a neusnet trust graph exposed as a feed generator would let Bluesky users benefit from personal trust-graph curation without leaving the platform.
 
-*Specified in detail in [ratings.md](ratings.md).*
+*Specified in detail in [ratings.md](spec/ratings.md).*
 
 ### Layer 2: Content Metadata
 
@@ -109,7 +109,7 @@ The atomic unit of a neusnet post is a small **metadata file**: a signed JSON do
 
 The content reference can point to an off-platform URL (making the post function as a link aggregator entry, like early Reddit or Slashdot) or to content hosted within the platform itself.
 
-*Specified in detail in [metadata.md](metadata.md).*
+*Specified in detail in [metadata.md](spec/metadata.md).*
 
 ### Layer 3: Identity
 
@@ -119,7 +119,7 @@ Other identity mechanisms are possible and may be preferable in some deployments
 
 The primary adversarial threat to a trust-graph system is the **Sybil attack**: a bad actor generating many fake identities to flood the graph with coordinated ratings. neusnet's natural defense is that fake accounts have no ratings power until real users develop positive affinity toward their posts — which requires actually producing content that real humans find valuable. Coordinated inauthentic behavior remains a risk but is bounded: a coordinated cluster cannot propagate its influence far into the broader graph without genuine cross-community endorsement, which the decay factor naturally limits.
 
-*Specified in detail in [identity.md](identity.md).*
+*Specified in detail in [identity.md](spec/identity.md).*
 
 ### Layer 4: Content Hosting and Distribution
 
@@ -163,7 +163,7 @@ This suggests a realistic adoption path: neusnet begins as a curation and identi
 
 **Rather than build every component from scratch, neusnet should seek to collaborate with and build on existing projects wherever possible.** Established multi-platform clients (Ivory, Mona, and others in the Mastodon ecosystem; clients being built on AT Protocol for Bluesky) are natural integration partners. IPFS and its tooling ecosystem are existing infrastructure, not something neusnet needs to reinvent. The novel contribution of this project is the trust graph protocol and the rating schema — the goal is to define those well and let them compose with whatever hosting and client infrastructure already exists.
 
-*Specified in detail in [hosting.md](hosting.md).*
+*Specified in detail in [hosting.md](spec/hosting.md).*
 
 ---
 
