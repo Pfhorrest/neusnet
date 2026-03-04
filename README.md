@@ -97,21 +97,7 @@ neusnet is designed as a stack of independent layers, each of which can in princ
 
 ### Layer 1: Ratings
 
-A rating record is a minimal structure:
-
-```
-{
-  rater:     <user identifier>,
-  item:      <content identifier>,
-  dimension: <rating dimension>,
-  value:     <positive, negative, or neutral>,
-  timestamp: <unix timestamp>,
-  public:    <boolean>,
-  signature: <cryptographic signature>
-}
-```
-
-Ratings marked `public: false` are stored locally and influence the owner's graph traversal (they affect which external rating records are fetched and how they are weighted) but are never transmitted to other peers. This allows users to rate sensitive content — political, personal, adult — in a way that shapes their own view without disclosing what they have been looking at.
+A rating record captures a single act of evaluation: who rated what, on which dimensions, with what values, and when. Records are signed by the rater's private key, making them tamper-evident and attributable. Each record may be marked public (shared with peers and used in others' graph traversal) or private (kept local and used only in the owner's own view). This allows users to rate sensitive content — political, personal, adult — in a way that shapes their own view without disclosing what they have been looking at.
 
 The rating layer is **platform-agnostic**. Item identifiers can be anything: a URL, a content hash, a magnet link, a post ID on another platform. This means the neusnet trust graph can in principle be applied as a curation layer on top of existing platforms — a browser extension that applies neusnet ratings to content on other sites is a natural early application. Within the Bluesky ecosystem specifically, AT Protocol's "feed generator" feature allows third-party algorithms to rank and filter content; a neusnet trust graph exposed as a feed generator would let Bluesky users benefit from personal trust-graph curation without leaving the platform.
 
@@ -119,14 +105,7 @@ The rating layer is **platform-agnostic**. Item identifiers can be anything: a U
 
 ### Layer 2: Content Metadata
 
-The atomic unit of a neusnet post is a small **metadata file** with a standardized schema, containing at minimum:
-
-- **Author**: identifier of the post's author
-- **Subject**: human-readable title
-- **Parent**: identifier of the post this is replying to, if any
-- **Tags**: a set of freeform tags for non-hierarchical categorization (replacing Usenet's rigid group hierarchy)
-- **Content reference**: either inline content (for short text) or a reference to where the full content can be retrieved
-- **Timestamp** and **signature**
+The atomic unit of a neusnet post is a small **metadata file**: a signed JSON document identifying the post, its author, its place in the conversation graph (via parent and version references), its tags, and where its content can be retrieved. The metadata file is designed to be lightweight enough that clients can retrieve and index many of them cheaply, deferring retrieval of actual content payloads — text, images, audio, video — until the user chooses to read a post.
 
 The content reference can point to an off-platform URL (making the post function as a link aggregator entry, like early Reddit or Slashdot) or to content hosted within the platform itself.
 
