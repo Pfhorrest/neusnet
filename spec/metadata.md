@@ -4,7 +4,7 @@
 
 This document specifies the neusnet content metadata format — the atomic unit of a neusnet post. It is a companion to [README.md](../README.md) (overview and motivation), [ratings.md](ratings.md) (Layer 1: Rating Protocol), [identity.md](identity.md) (Layer 3: Identity), and [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution).
 
-The examples in this document use IPFS/IPNS terminology (CIDs, IPNS names) as the reference implementation. All concepts generalize to other hosting substrates; see Section 2 for the abstract model and Section 8 for notes on non-IPFS deployments.
+The examples in this document use [IPFS](https://ipfs.tech)/IPNS terminology (CIDs, IPNS names) as the reference implementation. All concepts generalize to other hosting substrates; see Section 2 for the abstract model and Section 8 for notes on non-IPFS deployments.
 
 ---
 
@@ -40,8 +40,8 @@ The stable identifier may take different forms depending on the hosting substrat
 | Substrate | Stable identifier form |
 |-----------|----------------------|
 | IPFS/IPNS | IPNS name (e.g. `ipns://k51qzi5...`) |
-| AT Protocol | AT URI (e.g. `at://did:plc:abc.../app.bsky.feed.post/xyz`) |
-| Nostr | Replaceable event identifier |
+| [AT Protocol](https://atproto.com) | AT URI (e.g. `at://did:plc:abc.../app.bsky.feed.post/xyz`) |
+| [Nostr](https://nostr.com) | Replaceable event identifier |
 | HTTP | A canonical URL the author demonstrably controls |
 | Other | Any stable, author-controlled address |
 
@@ -98,7 +98,7 @@ At least one of `subject`, `summary`, or short inline content should be present 
 
 **`previous`** — string. The version identifier of the immediately preceding version of this post's own metadata file. Omitted in the first published version. Forms a backwards-linked chain that clients can traverse to reconstruct version history. On hosting substrates with native versioning (e.g. IPFS/IPNS), this field is redundant but included for clients that do not query native version history. On substrates without native versioning, this field is the primary mechanism for version chain traversal.
 
-**`signature`** — string. Cryptographic signature over all other fields in JCS canonical form (RFC 8785: keys sorted, no insignificant whitespace), using the author's private key. Unsigned posts are permitted in limited circumstances (see Section 6); unsigned posts must omit this field entirely rather than including an empty or null value.
+**`signature`** — string. Cryptographic signature over all other fields in JCS canonical form ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785): keys sorted, no insignificant whitespace), using the author's private key. Unsigned posts are permitted in limited circumstances (see Section 6); unsigned posts must omit this field entirely rather than including an empty or null value.
 
 ### Field Length Guidance
 
@@ -130,7 +130,7 @@ Each content reference object:
 
 **`size`** — integer. Optional. Size of the content payload in bytes. Allows clients to make informed prefetch decisions, particularly for large media files. Should reflect the size of the raw content, not any transport encoding.
 
-**`hash`** — string. Optional but strongly recommended when `uri` is a mutable or non-content-addressed reference (HTTPS, IPNS, magnet links, etc.). A cryptographic digest of the content payload, expressed as `algorithm:hexdigest` (e.g. `sha256:abc123...`, `blake3:def456...`). Serves two purposes: integrity verification (confirming that retrieved content matches what the author published) and content identity confirmation across posts (enabling the aggregation described in Section 6.2 even when immutable CIDs are not used). For IPFS CID references, this field is redundant but may be included for cross-substrate compatibility. Recommended algorithm: SHA-256 for broad interoperability; BLAKE3 for performance in implementations where it is available.
+**`hash`** — string. Optional but strongly recommended when `uri` is a mutable or non-content-addressed reference (HTTPS, IPNS, magnet links, etc.). A cryptographic digest of the content payload, expressed as `algorithm:hexdigest` (e.g. `sha256:abc123...`, `blake3:def456...`). Serves two purposes: integrity verification (confirming that retrieved content matches what the author published) and content identity confirmation across posts (enabling the aggregation described in Section 6.2 even when immutable CIDs are not used). For IPFS CID references, this field is redundant but may be included for cross-substrate compatibility. Recommended algorithm: SHA-256 for broad interoperability; [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) for performance in implementations where it is available.
 
 **`inline_content`** — string. Present only when `uri` is `inline:` (see Section 4.2).
 
@@ -144,7 +144,7 @@ Content URIs fall into two categories with importantly different trust propertie
 |----------|---------|
 | IPFS CID | `ipfs://bafybeig...` |
 | Inline marker | `inline:` |
-| BitTorrent magnet | `magnet:?xt=urn:btih:...` |
+| [BitTorrent](https://www.bittorrent.org) magnet | `magnet:?xt=urn:btih:...` |
 
 **Mutable URIs** — the content at this URI may change after publication. The author (or a server operator) may alter what is served at this address without any record of the change in the neusnet metadata file.
 
@@ -244,7 +244,7 @@ Clients must display trust level visibly and consistently. Author-verified posts
 
 ### 6.2 Third-Party Introductions
 
-A third-party introduction is a metadata file where the `author` field names the true author of the content but the `signature` is from a different party (the introducer). This is a legitimate and expected pattern — it is how external content (Bluesky posts, web articles, etc.) enters the neusnet graph before or instead of the original author posting it themselves.
+A third-party introduction is a metadata file where the `author` field names the true author of the content but the `signature` is from a different party (the introducer). This is a legitimate and expected pattern — it is how external content ([Bluesky](https://bsky.social) posts, web articles, etc.) enters the neusnet graph before or instead of the original author posting it themselves.
 
 Third-party introductions are not part of any post's canonical version history (Section 5.2), since they are not signed by the canonical author. Their ratings may nonetheless be included in the aggregate score for a post when content identity is confirmed via matching immutable URIs or hash fields across the introduction and a canonical version — the full aggregation rules are specified in ratings.md §2.5.
 

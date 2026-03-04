@@ -13,7 +13,7 @@ This document specifies the neusnet ratings and trust graph protocol in enough d
 The neusnet trust graph contains three kinds of **nodes**:
 
 - **Users** — identified by a stable user identifier (see Layer 3 spec)
-- **Posts** — identified by a content identifier (URL, IPFS CID, magnet link, platform-specific ID, etc.)
+- **Posts** — identified by a content identifier (URL, [IPFS](https://ipfs.tech) CID, magnet link, platform-specific ID, etc.)
 - **Tags** — identified by their normalized string value (see Section 6)
 
 **Edges** are ratings: directed, weighted, and multidimensional. An edge runs from a rater (always a user) to a target (a post, a tag, or another user directly). The weight of an edge is the rating value on each dimension.
@@ -271,19 +271,21 @@ For display purposes, client software may present a single combined score as a u
 
 ---
 
-## 6. Tag Normalization
+## 6. Tag Normalization and Hierarchy
 
-Tag strings must be normalized before use as identifiers. The normalization procedure is:
+### 6.1 Flat Tag Normalization
+
+Tag strings must be normalized before use as identifiers. The normalization procedure for a single tag component is:
 
 1. Apply Unicode NFKC normalization.
-2. Lowercase all characters.
+2. Lowercase all characters using Unicode locale-independent case folding.
 3. Strip leading and trailing whitespace and punctuation.
 4. Remove all punctuation characters except hyphens.
 5. Convert runs of whitespace to a single hyphen.
 6. Collapse runs of hyphens to a single hyphen.
 7. Strip any remaining leading or trailing hyphens.
 
-The result matches `[a-z0-9][a-z0-9-]*[a-z0-9]` or a single `[a-z0-9]` character. Tags normalizing to the empty string are invalid and must be rejected.
+The result matches `[a-z0-9][a-z0-9-]*[a-z0-9]` or a single `[a-z0-9]` character. A component normalizing to the empty string is invalid and the entire tag must be rejected.
 
 Examples:
 
@@ -295,13 +297,57 @@ Examples:
 | `"C++"` | `c` |
 | `"well-being"` | `well-being` |
 
+### 6.2 Hierarchical Tags
+
+Tags may express a containment relationship using dot notation:
+
+```
+#parent.child
+#grandparent.parent.child
+```
+
+For example, `#philosophy.epistemology` asserts that this post is about epistemology as a subtopic of philosophy. `#philosophy.epistemology.reliabilism` asserts a three-level hierarchy.
+
+A hierarchical tag is normalized by applying the flat normalization procedure (Section 6.1) independently to each dot-separated component, then rejoining with dots. The full normalized form matches `[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*`. Leading, trailing, and consecutive dots are invalid and the tag must be rejected.
+
+Examples:
+
+| Input | Normalized |
+|-------|-----------|
+| `"Philosophy.Epistemology"` | `philosophy.epistemology` |
+| `"Science Fiction.Hard SF"` | `science-fiction.hard-sf` |
+| `"#philosophy.epistemology.reliabilism"` | `philosophy.epistemology.reliabilism` |
+
+The dot separator is the only character with structural meaning in a tag. Hyphens are word separators within a component and carry no hierarchical significance. `#philosophy-basement` is a flat tag whose name contains "philosophy"; `#philosophy.basement` is a tag asserting that basement is a subtopic of philosophy. These are distinct tags with different semantics.
+
+No depth limit is specified at the protocol level. Clients may truncate display of deeply nested tags and may reasonably decline to propagate tags exceeding a practical depth (four or five levels covers virtually all real use cases).
+
+**Relationship to flat multi-tagging.** Tagging a post `#philosophy.epistemology.reliabilism` is largely equivalent, for search and feed purposes, to tagging it `#philosophy #epistemology #reliabilism` — both make the post findable by any of the three component terms. Authors are not required to use dot syntax; flat multi-tagging achieves most of the same results and may feel more natural. The dot syntax offers two additional things flat tags cannot express in a single tag: a prefix query that narrows to a specific branch (searching `#philosophy.epistemology` finds that subtree but not `#psychology.epistemology`), and an explicit authorial claim about how the concepts relate to each other in this post. For most everyday tagging, the choice is a matter of style.
+
+### 6.3 Tag Search Semantics
+
+When a user or client searches for or subscribes to a tag `#X`, the query matches any post whose tag set contains a tag where `X` appears as any dot-separated component — at any position in the hierarchy. Specifically:
+
+- A search for `#philosophy` matches `#philosophy`, `#philosophy.epistemology`, `#philosophy.epistemology.reliabilism`, and any other tag with `philosophy` as a component.
+- A search for `#epistemology` matches `#epistemology`, `#philosophy.epistemology`, `#psychology.epistemology`, and any other tag with `epistemology` as a component.
+- A search for `#philosophy.epistemology` matches `#philosophy.epistemology` and `#philosophy.epistemology.reliabilism` — tags that begin with `philosophy.epistemology` as a contiguous prefix — but not `#epistemology` alone or `#psychology.epistemology`.
+
+The general rule: a query for `#X` matches any tag that contains `X` as a component. A query for `#X.Y` (or any multi-component prefix) matches any tag that contains the sequence `X.Y` as a contiguous prefix. This means:
+
+- Searching a **single component** finds all uses of that concept regardless of where it appears in any hierarchy.
+- Searching a **multi-component prefix** narrows to a specific branch of the hierarchy and its descendants.
+
+This design ensures that using hierarchical dot syntax never harms discoverability. A post tagged `#philosophy.epistemology` is always findable by someone searching `#epistemology`, so posters are not penalized for providing more precise hierarchical context.
+
+Clients should offer users the option to search a tag **exactly** — matching only posts tagged with that precise string and no sub-components — for cases where a user wants to see only the top-level tag without its entire subtree.
+
 ---
 
 ## 7. Wire Format
 
 Rating record collections are encoded as **JSON**. JSON is human-readable, universally supported, easy to debug, and the natural choice for a project likely to attract web developers. The main costs — verbosity from repeated field names, and base64 encoding of binary signatures — are negligible at typical collection sizes.
 
-If compactness becomes important in a later version, **CBOR** is the recommended migration path: it uses an identical data model to JSON and is a near-drop-in replacement with significantly smaller output and native binary support.
+If compactness becomes important in a later version, **[CBOR](https://cbor.io)** is the recommended migration path: it uses an identical data model to JSON and is a near-drop-in replacement with significantly smaller output and native binary support.
 
 A rating record collection is a JSON object:
 

@@ -12,9 +12,9 @@ The early internet was a **pull medium**. You decided what to look for, and you 
 
 Platforms like **Usenet** embodied this ethos at the infrastructure level: posts were distributed across many independent servers with no central host, and every server held a copy of everything, so no single entity could control what existed. Individual users managed their own experience with *killfiles* — personal blocklists that filtered out authors or topics they didn't want to see. It was crude, but the principle was right: distribution was the network's job, and curation was the user's job. Usenet wasn't designed to scale to a billion users, and it showed — but its instincts about where control should live were sound.
 
-In 1996, a company called **PointCast** launched a product that turned idle PC screens into news tickers by pushing content directly to users' desktops without them asking for it. It was a sensation, and it triggered a wave of investment and imitation. Microsoft built "Active Desktop," Netscape built "Netcaster," and a cluster of startups including Marimba, BackWeb, and others competed to establish **push technology** as the next paradigm of the internet. The pitch was seductive: instead of the tiring, effortful experience of browsing the web, content would simply arrive. The analogy invoked, approvingly, was television.
+In 1996, a company called **[PointCast](https://en.wikipedia.org/wiki/PointCast_(company))** launched a product that turned idle PC screens into news tickers by pushing content directly to users' desktops without them asking for it. It was a sensation, and it triggered a wave of investment and imitation. Microsoft built "Active Desktop," Netscape built "Netcaster," and a cluster of startups including Marimba, BackWeb, and others competed to establish **push technology** as the next paradigm of the internet. The pitch was seductive: instead of the tiring, effortful experience of browsing the web, content would simply arrive. The analogy invoked, approvingly, was television.
 
-People who remembered what television was — a medium where a small number of broadcasters decided what hundreds of millions of people would see — were not enthused. The backlash was pointed. By the late 1990s, "push" as a branded concept had quietly collapsed; PointCast, which had turned down a $450 million acquisition offer at its peak, was eventually sold for a few million dollars. RSS emerged as a lightweight, user-controlled alternative to push channels, and the movement was declared dead.
+People who remembered what television was — a medium where a small number of broadcasters decided what hundreds of millions of people would see — were not enthused. The backlash was pointed. By the late 1990s, "push" as a branded concept had quietly collapsed; PointCast, which had turned down a $450 million acquisition offer at its peak, was eventually sold for a few million dollars. [RSS](https://www.rssboard.org/rss-specification) emerged as a lightweight, user-controlled alternative to push channels, and the movement was declared dead.
 
 Except it wasn't dead. It just stopped announcing itself. By the 2000s and 2010s, push had won — it just called itself **the algorithm** instead. Some central authority — a corporation, a government, a platform's moderation team, or increasingly an opaque machine learning system — decides what you should see and delivers it to you. You did not choose this curator. You cannot inspect their criteria. You cannot override their decisions except by leaving the platform entirely.
 
@@ -51,7 +51,7 @@ This is sometimes described informally as **"choose your own mod team"** — exc
 
 ### Multidimensional Ratings
 
-Inspired by Slashdot's moderation categories, ratings in neusnet are not a single number but a set of independent dimensions. The core proposed dimensions correspond to four fundamental questions you might ask about any piece of content:
+Inspired by [Slashdot](https://slashdot.org)'s moderation categories, ratings in neusnet are not a single number but a set of independent dimensions. The core proposed dimensions correspond to four fundamental questions you might ask about any piece of content:
 
 | Dimension | Positive | Negative |
 |-----------|----------|----------|
@@ -99,7 +99,7 @@ neusnet is designed as a stack of independent layers, each of which can in princ
 
 A rating record captures a single act of evaluation: who rated what, on which dimensions, with what values, and when. Records are signed by the rater's private key, making them tamper-evident and attributable. Each record may be marked public (shared with peers and used in others' graph traversal) or private (kept local and used only in the owner's own view). This allows users to rate sensitive content — political, personal, adult — in a way that shapes their own view without disclosing what they have been looking at.
 
-The rating layer is **platform-agnostic**. Item identifiers can be anything: a URL, a content hash, a magnet link, a post ID on another platform. This means the neusnet trust graph can in principle be applied as a curation layer on top of existing platforms — a browser extension that applies neusnet ratings to content on other sites is a natural early application. Within the Bluesky ecosystem specifically, AT Protocol's "feed generator" feature allows third-party algorithms to rank and filter content; a neusnet trust graph exposed as a feed generator would let Bluesky users benefit from personal trust-graph curation without leaving the platform.
+The rating layer is **platform-agnostic**. Item identifiers can be anything: a URL, a content hash, a magnet link, a post ID on another platform. This means the neusnet trust graph can in principle be applied as a curation layer on top of existing platforms — a browser extension that applies neusnet ratings to content on other sites is a natural early application. Within the [Bluesky](https://bsky.social) ecosystem specifically, [AT Protocol](https://atproto.com)'s "feed generator" feature allows third-party algorithms to rank and filter content; a neusnet trust graph exposed as a feed generator would let Bluesky users benefit from personal trust-graph curation without leaving the platform.
 
 *Specified in detail in [ratings.md](spec/ratings.md).*
 
@@ -126,7 +126,7 @@ The primary adversarial threat to a trust-graph system is the **Sybil attack**: 
 
 This layer is **deliberately hosting-agnostic**. The metadata file (Layer 2) contains a content reference field that can point to content hosted anywhere. Different posts on the same network may be hosted in entirely different ways, and the rating and discovery layers above don't care.
 
-#### IPFS (preferred for native neusnet content)
+#### [IPFS](https://ipfs.tech) (preferred for native neusnet content)
 
 **IPFS** is the preferred hosting backend for neusnet's own content. Its central feature is *content addressing*: every file is identified by a cryptographic hash of its contents (a CID, or Content Identifier), not by where it is stored. This means:
 
@@ -139,7 +139,7 @@ Short text content (including the metadata file itself) can be stored directly a
 
 Users who want to ensure their content remains available can **pin** it to a local IPFS node or to one of several public or paid pinning services, without any involvement from a neusnet-specific infrastructure provider.
 
-#### BitTorrent (supplementary, or as a wholesale alternative)
+#### [BitTorrent](https://www.bittorrent.org) (supplementary, or as a wholesale alternative)
 
 **BitTorrent** is well-suited as a supplementary transport for large media files. A metadata file hosted on IPFS can include a magnet link in its content reference field, directing clients to retrieve a large video or audio file via BitTorrent instead. BitTorrent's parallel-swarm download architecture is exceptionally efficient for large files at high demand, and it remains the most battle-tested decentralized file distribution protocol in existence.
 
@@ -153,7 +153,7 @@ Nothing prevents a neusnet metadata file from pointing to content on an ordinary
 
 The most important consequence of hosting-agnosticism is that neusnet does not require anyone to abandon their existing online presence to participate.
 
-Platforms like **Mastodon** (built on ActivityPub) and **Bluesky** (built on AT Protocol) expose open APIs designed for third-party clients. A neusnet client could read your feeds from these platforms, apply your personal trust graph as the ranking layer *instead of each platform's own algorithm*, and present a unified view across all of them. Multi-platform social clients already exist; what neusnet adds is a curation layer that is yours rather than the platform's.
+Platforms like **[Mastodon](https://joinmastodon.org)** (built on [ActivityPub](https://www.w3.org/TR/activitypub/)) and **Bluesky** (built on AT Protocol) expose open APIs designed for third-party clients. A neusnet client could read your feeds from these platforms, apply your personal trust graph as the ranking layer *instead of each platform's own algorithm*, and present a unified view across all of them. Multi-platform social clients already exist; what neusnet adds is a curation layer that is yours rather than the platform's.
 
 Cross-posting works in the reverse direction: when you publish a native neusnet post, your client can simultaneously post to Mastodon, Bluesky, or other connected platforms, spreading your content to audiences who haven't yet adopted neusnet.
 
@@ -161,7 +161,7 @@ Posts on traditional platforms lack neusnet's native author identity metadata. T
 
 This suggests a realistic adoption path: neusnet begins as a curation and identity layer grafted onto platforms people already use, demonstrating value before asking anyone to change their habits. Native neusnet hosting (via IPFS or BitTorrent) becomes appealing over time as the network effects of the trust graph make it worth participating more fully.
 
-**Rather than build every component from scratch, neusnet should seek to collaborate with and build on existing projects wherever possible.** Established multi-platform clients (Ivory, Mona, and others in the Mastodon ecosystem; clients being built on AT Protocol for Bluesky) are natural integration partners. IPFS and its tooling ecosystem are existing infrastructure, not something neusnet needs to reinvent. The novel contribution of this project is the trust graph protocol and the rating schema — the goal is to define those well and let them compose with whatever hosting and client infrastructure already exists.
+**Rather than build every component from scratch, neusnet should seek to collaborate with and build on existing projects wherever possible.** Established multi-platform clients ([Ivory](https://tapbots.com/ivory/), [Mona](https://apps.apple.com/app/mona-for-mastodon/id1659154653), and others in the Mastodon ecosystem; clients being built on AT Protocol for Bluesky) are natural integration partners. IPFS and its tooling ecosystem are existing infrastructure, not something neusnet needs to reinvent. The novel contribution of this project is the trust graph protocol and the rating schema — the goal is to define those well and let them compose with whatever hosting and client infrastructure already exists.
 
 *Specified in detail in [hosting.md](spec/hosting.md).*
 
@@ -179,7 +179,7 @@ neusnet's architecture dissolves this problem not by improving how centralized m
 
 The organizing unit of neusnet is not a room, server, or group — it is a **tag**. Tags are freeform, unowned, and unregistered. Anyone can post under `#philosophy`; no one administers it. The community that forms around a tag is defined entirely by who uses it and how the people who read it weight those contributors through their trust graphs.
 
-This maps directly onto Usenet's newsgroup model — `#philosophy` is `rec.arts.philosophy` without the hierarchy and without the server operator who could shut it down. A subset of people wanting a more focused space can simply adopt a more specific tag: `#philosophy-basement` is a perfectly valid community, visible to anyone who searches for it, isolable in a saved feed, yet owned by no one. The community cannot be seized or destroyed by any individual's decision because there is no asset to seize.
+This maps directly onto Usenet's newsgroup model — `#philosophy` is `rec.arts.philosophy` without the hierarchy and without the server operator who could shut it down. A subset of people wanting a more focused space can simply adopt a more specific tag. Tags support an optional dot notation for expressing explicit hierarchy: `#philosophy.epistemology` asserts that this post is about epistemology as a subtopic of philosophy, while `#philosophy-basement` is simply a flat tag whose name happens to contain "philosophy". A community can self-organise under `#philosophy.basement` to make that containment relationship explicit, or use a flat tag to remain independent. Either way, the community is owned by no one. Searching for `#epistemology` returns posts tagged `#philosophy.epistemology` and `#psychology.epistemology` alike — hierarchical tagging adds precision without creating silos or penalising discoverability.
 
 ### Feeds as Channels
 
@@ -206,7 +206,7 @@ Clients can compose this with the feed model to produce a **buddy list** for any
 
 ### The Real-Time Layer
 
-neusnet does not attempt to replace the purely ephemeral layer of chat platforms — typing indicators, voice and video, instantaneous delivery guarantees. For those, Matrix and XMPP are appropriate transports and neusnet is designed to interoperate with them (see hosting.md §5). The division of responsibility is clean: neusnet handles everything above the threshold of content worth persisting; real-time transient signaling is delegated to protocols built for it. A client could present both in a unified interface without either layer needing to subsume the other.
+neusnet does not attempt to replace the purely ephemeral layer of chat platforms — typing indicators, voice and video, instantaneous delivery guarantees. For those, [Matrix](https://matrix.org) and [XMPP](https://xmpp.org) are appropriate transports and neusnet is designed to interoperate with them (see hosting.md §5). The division of responsibility is clean: neusnet handles everything above the threshold of content worth persisting; real-time transient signaling is delegated to protocols built for it. A client could present both in a unified interface without either layer needing to subsume the other.
 
 ---
 

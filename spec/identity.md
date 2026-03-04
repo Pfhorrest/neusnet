@@ -10,7 +10,7 @@ This document specifies the neusnet identity model: how users are identified, ho
 
 Identity in neusnet is built on three principles:
 
-**Minimum viable identity is a keypair.** A user who generates an Ed25519 keypair and never publishes anything else has a valid neusnet identity. No registration, no username database, no central authority. The public key is the identifier; the private key is the credential.
+**Minimum viable identity is a keypair.** A user who generates an [Ed25519](https://ed25519.cr.yp.to) keypair and never publishes anything else has a valid neusnet identity. No registration, no username database, no central authority. The public key is the identifier; the private key is the credential.
 
 **Richer identity is optional and user-controlled.** Users may publish a hosted identity document containing a display name, avatar, profile text, and links to other accounts. This is a convenience layer on top of the keypair, not a requirement.
 
@@ -42,9 +42,9 @@ Users who prefer not to manage raw keypairs may use identifiers from other syste
 
 | Substrate | Identifier form | Notes |
 |-----------|----------------|-------|
-| AT Protocol | `at://did:plc:...` or `at://did:web:...` | Decentralized; recommended alternative |
-| Nostr | `npub1...` (secp256k1) | Large existing ecosystem; different curve from native neusnet |
-| W3C DID | `did:key:...`, `did:web:...`, etc. | Most interoperable standard |
+| [AT Protocol](https://atproto.com) | `at://did:plc:...` or `at://did:web:...` | Decentralized; recommended alternative |
+| [Nostr](https://nostr.com) | `npub1...` (secp256k1) | Large existing ecosystem; different curve from native neusnet |
+| [W3C DID](https://www.w3.org/TR/did-core/) | `did:key:...`, `did:web:...`, etc. | Most interoperable standard |
 | OAuth/SSO | `oauth:<provider>:<user-id>` | Centralized; acceptable for early adoption, not recommended long-term |
 
 When an alternative substrate identifier is used, the signature scheme associated with that substrate applies (see Section 4). Rating records and metadata files from such users are valid neusnet objects; they simply use a different identifier format and signing method.
@@ -110,7 +110,7 @@ Key generation must use a cryptographically secure random number generator. Clie
 ### 3.2 Private Key Storage
 
 The private key must be stored securely. Client software should:
-- Encrypt the private key at rest using a user-supplied passphrase (recommended: Argon2id key derivation, AES-256-GCM encryption)
+- Encrypt the private key at rest using a user-supplied passphrase (recommended: [Argon2id](https://datatracker.ietf.org/doc/html/rfc9106) key derivation, [AES-256-GCM](https://csrc.nist.gov/publications/detail/sp/800-38d/final) encryption)
 - Never transmit the private key over any network connection
 - Warn users clearly that loss of the private key without registered recovery keys means permanent loss of that identity
 
@@ -130,16 +130,16 @@ Users should treat recovery key distribution as a security-critical decision. A 
 
 ### 4.1 Signature Algorithm
 
-The native neusnet signature algorithm is **Ed25519** as specified in RFC 8032.
+The native neusnet signature algorithm is **Ed25519** as specified in [RFC 8032](https://www.rfc-editor.org/rfc/rfc8032).
 
 For users on alternative substrates, the signature algorithm associated with that substrate applies:
 - AT Protocol DIDs: typically Ed25519 or secp256k1 depending on DID method
-- Nostr: secp256k1 (Schnorr signatures per NIP-01)
+- Nostr: secp256k1 (Schnorr signatures per [NIP-01](https://github.com/nostr-protocol/nostr/blob/master/01.md))
 - W3C DID: as specified by the DID method
 
 ### 4.2 Canonicalization
 
-Before signing, the object to be signed (a rating record, metadata file, identity document, or rotation declaration) is serialized to its canonical form using **JCS — JSON Canonicalization Scheme (RFC 8785)**:
+Before signing, the object to be signed (a rating record, metadata file, identity document, or rotation declaration) is serialized to its canonical form using **JCS — JSON Canonicalization Scheme ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785))**:
 - Object keys sorted lexicographically at all levels
 - No insignificant whitespace
 - Unicode strings in NFC normalization
@@ -149,7 +149,7 @@ All signature fields are excluded from the object before canonicalization and si
 
 ### 4.3 Signature Encoding
 
-The 64-byte Ed25519 signature is encoded as a **Base64url** string (RFC 4648 §5, no padding) and stored in the relevant signature field. Signatures from alternative substrates use the encoding conventions of that substrate.
+The 64-byte Ed25519 signature is encoded as a **Base64url** string ([RFC 4648](https://www.rfc-editor.org/rfc/rfc4648) §5, no padding) and stored in the relevant signature field. Signatures from alternative substrates use the encoding conventions of that substrate.
 
 ### 4.4 Verification
 
@@ -231,15 +231,15 @@ Given a native neusnet user identifier (`nid1...`), the address of that user's i
 **Step 1 — Derive the IPNS name from the keypair:**
 
 1. Take the 32-byte Ed25519 public key.
-2. Encode it as a `PublicKey` protobuf (key type `Ed25519`, data = the 32 bytes).
+2. Encode it as a `PublicKey` [protobuf](https://protobuf.dev) (key type `Ed25519`, data = the 32 bytes).
 3. Compute the SHA-256 multihash of the protobuf encoding.
 4. Encode as a CIDv1 with codec `libp2p-key` and base32 encoding.
 
-This produces the user's IPNS name — the `k51qzi5...`-style identifier seen in examples throughout these documents. This is the native IPFS/IPNS derivation for Ed25519 keypairs, compatible with standard IPFS tooling.
+This produces the user's IPNS name — the `k51qzi5...`-style identifier seen in examples throughout these documents. This is the native [IPFS](https://ipfs.tech)/IPNS derivation for Ed25519 keypairs, compatible with standard IPFS tooling.
 
 **Step 2 — Resolve the IPNS name to a directory:**
 
-The IPNS name resolves to an IPFS UnixFS directory object. All per-user documents are published as named paths under this directory root:
+The IPNS name resolves to an IPFS [UnixFS](https://github.com/ipfs/specs/blob/main/UNIXFS.md) directory object. All per-user documents are published as named paths under this directory root:
 
 ```
 ipns://<user's IPNS name>/

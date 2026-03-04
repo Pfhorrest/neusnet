@@ -8,13 +8,13 @@ This document specifies how neusnet content — post metadata files, content pay
 
 ## 1. Design Principles
 
-**No single hosting substrate is required.** neusnet content can be hosted on IPFS, BitTorrent, conventional web servers, or any other addressable storage system. The metadata format (Layer 2) abstracts over hosting by expressing content references as URIs, allowing any substrate to serve as the backing store.
+**No single hosting substrate is required.** neusnet content can be hosted on [IPFS](https://ipfs.tech), [BitTorrent](https://www.bittorrent.org), conventional web servers, or any other addressable storage system. The metadata format (Layer 2) abstracts over hosting by expressing content references as URIs, allowing any substrate to serve as the backing store.
 
 **Immutability is strongly preferred for content payloads.** Content-addressed storage — where the identifier is derived from the content itself — provides integrity guarantees that server-hosted content cannot. Clients should prefer immutable references (IPFS CIDs, BitTorrent info hashes) and treat mutable references (HTTPS URLs, IPNS names used as content URIs) with appropriate caution.
 
 **Distribution is a social act.** Content propagates through the network because peers who care about it pin and re-serve it. There is no central CDN, no mandatory infrastructure. A post's availability depends on whether people find it worth preserving — which aligns naturally with the trust graph: content that scores well in your trust graph is content your client helps keep available.
 
-**Interoperability over replacement.** neusnet does not require participants to abandon existing platforms. The hosting layer is designed to overlay on Fediverse, RSS, Matrix, XMPP, and other protocols as content sources and distribution channels, meeting users where they already are.
+**Interoperability over replacement.** neusnet does not require participants to abandon existing platforms. The hosting layer is designed to overlay on [Fediverse](https://fediverse.info), [RSS](https://www.rssboard.org/rss-specification), [Matrix](https://matrix.org), [XMPP](https://xmpp.org), and other protocols as content sources and distribution channels, meeting users where they already are.
 
 ---
 
@@ -25,9 +25,9 @@ Hosting substrates fall into four categories based on their role and properties:
 | Category | Substrates | Primary role |
 |----------|-----------|--------------|
 | **Native decentralized storage** | IPFS, BitTorrent | Primary content hosting; immutable, resilient |
-| **Federated server protocols** | ActivityPub (Fediverse), NNTP | Content source and publishing target |
+| **Federated server protocols** | [ActivityPub](https://www.w3.org/TR/activitypub/) (Fediverse), [NNTP](https://datatracker.ietf.org/doc/html/rfc3977) | Content source and publishing target |
 | **Messaging and transport protocols** | Matrix, XMPP | Gossip and metadata distribution |
-| **Syndication formats** | RSS, Atom | Lightweight content source and publishing |
+| **Syndication formats** | [RSS](https://www.rssboard.org/rss-specification), [Atom](https://datatracker.ietf.org/doc/html/rfc4287) | Lightweight content source and publishing |
 | **Plain HTTP** | Any web server | Fallback; always supported |
 
 These categories are not mutually exclusive — a single neusnet deployment may use several substrates simultaneously, and a given piece of content may be reachable via multiple substrate types.
@@ -67,7 +67,7 @@ IPNS is used for the *pointer* layer only. Content payloads referenced in metada
 - Key rotation declarations for known users
 - Cached rating collections from proximal peers
 
-Users may additionally configure remote pinning services (Pinata, web3.storage, etc.) to ensure their own content remains available independently of their local node's uptime.
+Users may additionally configure remote pinning services ([Pinata](https://pinata.cloud), [web3.storage](https://web3.storage), etc.) to ensure their own content remains available independently of their local node's uptime.
 
 ### 3.2 BitTorrent
 
@@ -101,7 +101,7 @@ The client's pinning set also serves as its **endorsement list** for gossip: con
 
 ### 4.1 ActivityPub and the Fediverse
 
-**ActivityPub** is the W3C-standardized protocol underlying the Fediverse — Mastodon, Pixelfed, PeerTube, Misskey, Lemmy, and many others. It defines how actors (users) publish activities (posts, likes, follows) and how servers federate those activities to followers across instances.
+**ActivityPub** is the W3C-standardized protocol underlying the Fediverse — [Mastodon](https://joinmastodon.org), [Pixelfed](https://pixelfed.org), [PeerTube](https://joinpeertube.org), [Misskey](https://misskey-hub.net), [Lemmy](https://join-lemmy.org), and many others. It defines how actors (users) publish activities (posts, likes, follows) and how servers federate those activities to followers across instances.
 
 ActivityPub integration allows neusnet to participate in the largest existing decentralized social ecosystem without requiring Fediverse users to adopt neusnet natively.
 
@@ -112,10 +112,10 @@ A neusnet client can subscribe to ActivityPub actors and ingest their posts as n
 When a user publishes a native neusnet post, their client can simultaneously publish it as an ActivityPub `Note` or `Article` activity to a Fediverse actor they control. This cross-posts the content to the Fediverse, making it discoverable to users who have not adopted neusnet. The ActivityPub post's URL becomes an additional content reference in the neusnet metadata file.
 
 **Bridging identity:**
-A Fediverse actor URL (e.g. `https://mastodon.social/@user`) or AT Protocol DID may serve as the stable identifier for a neusnet user who has not established a native neusnet keypair identity. Ratings given to content published under that identifier accumulate against it in the trust graph.
+A Fediverse actor URL (e.g. `https://mastodon.social/@user`) or [AT Protocol](https://atproto.com) DID may serve as the stable identifier for a neusnet user who has not established a native neusnet keypair identity. Ratings given to content published under that identifier accumulate against it in the trust graph.
 
 **AT Protocol / Bluesky:**
-Bluesky is built on AT Protocol, which has its own federation model distinct from ActivityPub. AT Protocol's feed generator feature allows third-party algorithms to rank and filter content; a neusnet trust graph exposed as an AT Protocol feed generator would let Bluesky users benefit from personal trust-graph curation without leaving the platform. AT Protocol DIDs are explicitly supported as neusnet user identifiers (see identity.md §2.1).
+[Bluesky](https://bsky.social) is built on AT Protocol, which has its own federation model distinct from ActivityPub. AT Protocol's feed generator feature allows third-party algorithms to rank and filter content; a neusnet trust graph exposed as an AT Protocol feed generator would let Bluesky users benefit from personal trust-graph curation without leaving the platform. AT Protocol DIDs are explicitly supported as neusnet user identifiers (see identity.md §2.1).
 
 ### 4.2 NNTP and Usenet
 
