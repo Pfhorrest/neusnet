@@ -2,9 +2,7 @@
 
 *Working draft — design phase*
 
-This document specifies the neusnet ratings and trust graph protocol in enough detail to guide implementation and invite critique. It is a companion to [README.md](README.md), which provides motivation and architectural overview. Where the README describes *what* and *why*, this document describes *how*.
-
-This specification covers Layer 1 (Ratings) and the trust graph algorithm that operates on it. Specifications for Layer 2 (Content Metadata), Layer 3 (Identity), and Layer 4 (Content Hosting) will follow in subsequent documents as those designs are finalized.
+This document specifies the neusnet ratings and trust graph protocol in enough detail to guide implementation and invite critique. It is a companion to [README.md](README.md) (overview and motivation), [metadata.md](metadata.md) (Layer 2: Content Metadata), [identity.md](identity.md) (Layer 3: Identity), and [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution). Where the README describes *what* and *why*, this document describes *how*.
 
 ---
 
@@ -91,7 +89,9 @@ A rating record is a signed data structure with the following fields:
 
 Each user's public rating records are published as a single retrievable collection — an array of rating record objects ordered by timestamp ascending. The wire format is JSON (see Section 7 for format rationale and alternatives).
 
-The collection should support retrieval in full. For most users the collection will be small enough (a few hundred to a few thousand records) that full retrieval is not burdensome. If the storage format supports partial or range retrieval, clients may fetch incrementally as an optimization.
+The collection should support retrieval in full. For most users the collection will be small enough (a few hundred to a few thousand records) that full retrieval is not burdensome. For prolific raters with very large collections, clients should support **cursor-based pagination** using timestamp as the cursor: a request may include an `after` parameter specifying a Unix timestamp, and the response returns only records with `timestamp` strictly greater than that value, up to a page size limit. The recommended default page size is 500 records. A response that returns fewer records than the page size indicates the end of the collection.
+
+The collection object's `generated` field serves as a freshness indicator; clients should re-fetch if the cached copy's `generated` timestamp is older than their staleness threshold.
 
 ### 2.3 Updating and Superseding Ratings
 
@@ -326,9 +326,7 @@ A rating record collection is a JSON object:
 
 **8.1 Derived-to-direct weight ratio.** The suggested 2:1 default has not been empirically validated. Community feedback and argument about this default are welcome.
 
-**8.2 Non-Latin tag normalization.** The normalization rules in Section 6 handle Latin-script tags well. Tags in other scripts (Arabic, CJK, Cyrillic, etc.) are not excluded but their behavior under these rules should be tested and the rules extended if needed.
-
-**8.3 Partial collection retrieval.** The spec allows but does not require partial retrieval. A standard for range queries or cursor-based pagination would help clients handle very large collections from prolific raters.
+**8.2 Non-Latin tag normalization.** The normalization rules in Section 6 handle Latin-script tags well. Tags in other scripts (Arabic, CJK, Cyrillic, etc.) are not excluded but their behavior under these rules should be tested and the rules extended if needed. The recommended direction is Unicode NFKC normalization as a baseline (which handles compatibility equivalences across scripts) followed by script-specific lowercasing using Unicode's locale-independent case folding rules. CJK tags are likely to be case-insensitive by nature but may need whitespace and punctuation stripping rules analogous to those in Section 6. Contributions from native speakers of non-Latin-script languages are especially welcome here.
 
 ---
 

@@ -2,7 +2,7 @@
 
 *Working draft — design phase*
 
-This document specifies the neusnet content metadata format — the atomic unit of a neusnet post. It is a companion to [ratings.md](ratings.md) (Layer 1: Ratings) and [README.md](README.md) (overview and motivation).
+This document specifies the neusnet content metadata format — the atomic unit of a neusnet post. It is a companion to [README.md](README.md) (overview and motivation), [ratings.md](ratings.md) (Layer 1: Rating Protocol), [identity.md](identity.md) (Layer 3: Identity), and [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution).
 
 The examples in this document use IPFS/IPNS terminology (CIDs, IPNS names) as the reference implementation. All concepts generalize to other hosting substrates; see Section 2 for the abstract model and Section 8 for notes on non-IPFS deployments.
 
@@ -99,6 +99,12 @@ At least one of `subject`, `summary`, or short inline content should be present 
 **`previous`** — string. The version identifier of the immediately preceding version of this post's own metadata file. Omitted in the first published version. Forms a backwards-linked chain that clients can traverse to reconstruct version history. On hosting substrates with native versioning (e.g. IPFS/IPNS), this field is redundant but included for clients that do not query native version history. On substrates without native versioning, this field is the primary mechanism for version chain traversal.
 
 **`signature`** — string. Cryptographic signature over all other fields in JCS canonical form (RFC 8785: keys sorted, no insignificant whitespace), using the author's private key. Unsigned posts are permitted in limited circumstances (see Section 6); unsigned posts must omit this field entirely rather than including an empty or null value.
+
+### Field Length Guidance
+
+No hard limits are specified at the protocol level for tag count, subject length, summary length, or inline content length. These are intentionally left as client implementation decisions — different clients may serve different contexts (mobile, desktop, archival, lightweight readers) with legitimately different constraints. Clients may truncate fields for display and may decline to propagate metadata files they consider excessively large.
+
+As informal guidance: `subject` is analogous to an email subject line or HTML `<title>` and works best under 200 characters; `summary` is analogous to a meta description and works best under 500 characters; tag arrays of more than 20 tags are likely to dilute affinity signal and may be treated skeptically by clients. These are recommendations for authors and client implementors, not protocol requirements.
 
 ---
 
@@ -265,11 +271,7 @@ When a bridged post's original author establishes a neusnet identity, they may p
 
 ## 7. Open Questions
 
-**7.1 Tag, subject, and summary length guidance.** No hard limits are specified for tag count, subject length, summary length, or inline content length. These are left as client implementation decisions — a client may truncate fields for display, or decline to propagate metadata files it considers excessively large. Future versions of this spec may add recommended (non-mandatory) guidance if the community converges on norms.
-
-**7.2 Non-IPFS stable identifier binding.** For authors using AT Protocol DIDs, Nostr keypairs, or other identity systems as their stable identifier substrate, the precise binding between the neusnet `author` field and the stable `id` address space needs elaboration. The identity.md spec should address this.
-
-**7.3 Third-party attestation scope.** The "third-party attested" status in Section 6.1 covers the case where an introducer signs a bridged post. It does not yet specify what claims the introducer's signature covers — for example, "I retrieved this content at this URI at this timestamp and its hash was X" versus simply "I attest this metadata file is accurate." A more precise attestation schema, possibly including a content hash snapshot, would strengthen the integrity guarantees of the introduction mechanism and make content identity confirmation (Section 6.2) more robust.
+**7.1 Third-party attestation scope.** The "third-party attested" status in Section 6.1 covers the case where an introducer signs a bridged post. It does not yet specify what claims the introducer's signature covers — for example, "I retrieved this content at this URI at this timestamp and its hash was X" versus simply "I attest this metadata file is accurate." A more precise attestation schema, possibly including a content hash snapshot, would strengthen the integrity guarantees of the introduction mechanism and make content identity confirmation (Section 6.2) more robust.
 
 ---
 

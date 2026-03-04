@@ -115,6 +115,8 @@ Ratings marked `public: false` are stored locally and influence the owner's grap
 
 The rating layer is **platform-agnostic**. Item identifiers can be anything: a URL, a content hash, a magnet link, a post ID on another platform. This means the neusnet trust graph can in principle be applied as a curation layer on top of existing platforms — a browser extension that applies neusnet ratings to content on other sites is a natural early application. Within the Bluesky ecosystem specifically, AT Protocol's "feed generator" feature allows third-party algorithms to rank and filter content; a neusnet trust graph exposed as a feed generator would let Bluesky users benefit from personal trust-graph curation without leaving the platform.
 
+*Specified in detail in [ratings.md](ratings.md).*
+
 ### Layer 2: Content Metadata
 
 The atomic unit of a neusnet post is a small **metadata file** with a standardized schema, containing at minimum:
@@ -128,6 +130,8 @@ The atomic unit of a neusnet post is a small **metadata file** with a standardiz
 
 The content reference can point to an off-platform URL (making the post function as a link aggregator entry, like early Reddit or Slashdot) or to content hosted within the platform itself.
 
+*Specified in detail in [metadata.md](metadata.md).*
+
 ### Layer 3: Identity
 
 Users are identified by a stable, verifiable identifier that can be used to sign ratings and posts. The simplest and most self-sovereign option is a **cryptographic keypair**: your public key is your identity, your private key signs your content, and there is no registration, no username database, no central authority that can revoke your identity.
@@ -135,6 +139,8 @@ Users are identified by a stable, verifiable identifier that can be used to sign
 Other identity mechanisms are possible and may be preferable in some deployments. AT Protocol (Bluesky's underlying protocol) provides a decentralized identity layer based on DIDs (Decentralized Identifiers) that could serve the same function while also enabling tighter integration with the Bluesky ecosystem. Other DID-based systems, or even federated identity providers, could plug into the same slot. The core requirement is that an identifier be stable and verifiable. Decentralization is strongly preferred for the long-term philosophy of the system, but it is not a hard technical requirement: platform-issued identifiers (including OAuth/SSO providers like Google, Apple, or GitHub) could in principle serve as user IDs, which might ease integration with existing platforms during early adoption even if they introduce a degree of central dependency that a mature deployment would want to avoid.
 
 The primary adversarial threat to a trust-graph system is the **Sybil attack**: a bad actor generating many fake identities to flood the graph with coordinated ratings. neusnet's natural defense is that fake accounts have no ratings power until real users develop positive affinity toward their posts — which requires actually producing content that real humans find valuable. Coordinated inauthentic behavior remains a risk but is bounded: a coordinated cluster cannot propagate its influence far into the broader graph without genuine cross-community endorsement, which the decay factor naturally limits.
+
+*Specified in detail in [identity.md](identity.md).*
 
 ### Layer 4: Content Hosting and Distribution
 
@@ -172,11 +178,56 @@ Platforms like **Mastodon** (built on ActivityPub) and **Bluesky** (built on AT 
 
 Cross-posting works in the reverse direction: when you publish a native neusnet post, your client can simultaneously post to Mastodon, Bluesky, or other connected platforms, spreading your content to audiences who haven't yet adopted neusnet.
 
-Posts on traditional platforms lack neusnet's native author identity metadata. This can be bridged with a simple convention: include your neusnet public key in the body of a post on a traditional platform — something like `[neusnet:npub1abc123...]` — and neusnet clients can parse it. This is an established pattern; PGP signatures were distributed the same way before email clients natively supported them. A post with an embedded neusnet key becomes a node in the trust graph: it can be rated, those ratings contribute to the author's affinity scores, and the author's own published ratings apply to content they've rated. The neusnet graph grows quietly underneath existing platforms, requiring no migration.
+Posts on traditional platforms lack neusnet's native author identity metadata. This can be bridged through a mutual attestation convention: a user publishes their neusnet public key as a `[neusnet:nid1...]` token in their platform bio, and lists that platform profile URL in the `links` array of their neusnet identity document. When both are present, a neusnet client can verify the binding without any platform cooperation — no API access, no changes to how the platform works. Ratings given to content on that platform then flow into the trust graph against the author's verified neusnet identity. The convention follows the same pattern PGP users employed for decades, distributing key fingerprints in email signatures and forum profiles. The full verification procedure is specified in identity.md §2.2.
 
 This suggests a realistic adoption path: neusnet begins as a curation and identity layer grafted onto platforms people already use, demonstrating value before asking anyone to change their habits. Native neusnet hosting (via IPFS or BitTorrent) becomes appealing over time as the network effects of the trust graph make it worth participating more fully.
 
 **Rather than build every component from scratch, neusnet should seek to collaborate with and build on existing projects wherever possible.** Established multi-platform clients (Ivory, Mona, and others in the Mastodon ecosystem; clients being built on AT Protocol for Bluesky) are natural integration partners. IPFS and its tooling ecosystem are existing infrastructure, not something neusnet needs to reinvent. The novel contribution of this project is the trust graph protocol and the rating schema — the goal is to define those well and let them compose with whatever hosting and client infrastructure already exists.
+
+*Specified in detail in [hosting.md](hosting.md).*
+
+---
+
+## Communities Without Owners
+
+neusnet was originally conceived in the context of forum-like platforms — asynchronous discussion where posts accumulate over hours or days. But the line between "forum" and "chat" has always been blurry: people have real-time exchanges on forums, and chat threads stretch across days. The underlying problem neusnet addresses applies equally to both.
+
+That problem is structural: on platforms like Discord, Reddit, or any server- or group-based social network, someone has to be in charge. The server owner, the subreddit moderator, the group admin — their role is not incidental but architecturally mandated. The community's shared history and membership list live on infrastructure they control, which means curation policy is necessarily centralized. When that policy becomes contested, the only recourse is to leave — and leaving means abandoning the shared history and dispersing the community. This dynamic repeats endlessly: servers splinter, subreddits fork, communities scatter.
+
+neusnet's architecture dissolves this problem not by improving how centralized moderation works, but by eliminating the structural necessity of it.
+
+### Tags as Communities
+
+The organizing unit of neusnet is not a room, server, or group — it is a **tag**. Tags are freeform, unowned, and unregistered. Anyone can post under `#philosophy`; no one administers it. The community that forms around a tag is defined entirely by who uses it and how the people who read it weight those contributors through their trust graphs.
+
+This maps directly onto Usenet's newsgroup model — `#philosophy` is `rec.arts.philosophy` without the hierarchy and without the server operator who could shut it down. A subset of people wanting a more focused space can simply adopt a more specific tag: `#philosophy-basement` is a perfectly valid community, visible to anyone who searches for it, isolable in a saved feed, yet owned by no one. The community cannot be seized or destroyed by any individual's decision because there is no asset to seize.
+
+### Feeds as Channels
+
+A client that lets users save tag searches as named feeds provides the Discord channel experience without the Discord power structure. A user might configure:
+
+- A `#music` feed
+- A `#philosophy` feed
+- A `#philosophy-basement` feed
+- A combined feed for `#star-trek` and `#star-wars`
+
+Each feed is a personalized, trust-graph-filtered view of all posts under those tags — the user's own curated channel list, assembled from the global tag space, answerable to no one but themselves. Two members of the same tag-community see different views of it based on their respective trust graphs. There is no single authoritative view, no algorithm imposed from above, no moderator whose removal of a post affects what you see.
+
+### The Schism Problem
+
+The recurring schism dynamic of community platforms — where a faction unhappy with administration policy leaves to found a rival space — looks different through this lens. In a room-based platform, leaving is costly: you lose access to shared history, your posts are left behind, the community fractures along an ownership boundary. In neusnet, there is no ownership boundary to fracture along.
+
+A group of users who want a more focused version of a community can coalesce around a sub-tag without anyone being expelled from anything. Their `#philosophy-basement` posts remain visible in `#philosophy` searches for anyone whose trust graph surfaces them. The broader community loses nothing; the sub-community gains a coherent identity. Both can exist simultaneously without conflict, and the relationship between them is determined by individual trust graph choices rather than administrative fiat.
+
+### Presence and Buddy Lists
+
+The `status` field in the identity document (see identity.md §5.2) allows users to publish a short free-text presence signal — "writing", "away", "open to discussion" — updated as frequently as they like. This is not binary online/offline presence detection, which would require centralized infrastructure, but it is sufficient for the social function presence serves in most contexts: knowing whether someone is around and what they're up to.
+
+Clients can compose this with the feed model to produce a **buddy list** for any tag-feed: the set of authors with posts in that feed who have positive affinity, ordered by recency of identity document update, with their current status displayed. No new protocol machinery is required — this falls entirely out of the trust graph, the tag system, and the identity document, composed by the client.
+
+### The Real-Time Layer
+
+neusnet does not attempt to replace the purely ephemeral layer of chat platforms — typing indicators, voice and video, instantaneous delivery guarantees. For those, Matrix and XMPP are appropriate transports and neusnet is designed to interoperate with them (see hosting.md §5). The division of responsibility is clean: neusnet handles everything above the threshold of content worth persisting; real-time transient signaling is delegated to protocols built for it. A client could present both in a unified interface without either layer needing to subsume the other.
 
 ---
 

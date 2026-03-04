@@ -2,7 +2,7 @@
 
 *Working draft — design phase*
 
-This document specifies the neusnet identity model: how users are identified, how their signatures are verified, and how identity persists, rotates, and optionally presents itself to other users. It is a companion to [ratings.md](ratings.md), [metadata.md](metadata.md), and [README.md](README.md).
+This document specifies the neusnet identity model: how users are identified, how their signatures are verified, and how identity persists, rotates, and optionally presents itself to other users. It is a companion to [README.md](README.md) (overview and motivation), [ratings.md](ratings.md) (Layer 1: Rating Protocol), [metadata.md](metadata.md) (Layer 2: Content Metadata), and [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution).
 
 ---
 
@@ -51,6 +51,50 @@ When an alternative substrate identifier is used, the signature scheme associate
 
 Clients should display a visual indicator of which identity substrate a user is using, so other users can understand the trust and decentralization properties of that identity.
 
+### 2.2 External Platform Identity Binding
+
+Users who have accounts on platforms that provide no native cryptographic identity and no open API — traditional forums, Reddit, Twitter/X, phpBB installations, and similar — can still anchor those accounts to their neusnet identity through a mutual attestation convention requiring no platform cooperation.
+
+The binding works in two directions simultaneously, and is only considered verified when both are present:
+
+**Direction 1 — Platform → neusnet (the key token):**
+The user publishes their neusnet public key as a parseable token in their platform profile bio, or in the body of a designated post (e.g. a pinned post, a profile post, or an introductory thread post). The canonical token format is:
+
+```
+[neusnet:nid1<Base58-encoded public key>]
+```
+
+For example: `[neusnet:nid1F3sAqQpLzFtKmVbRwXcNyHjDgEoIuPe...]`
+
+This token asserts: "whoever controls this platform account also controls this neusnet keypair." Any client that can read the platform profile can extract and verify the key.
+
+**Direction 2 — neusnet → platform (the links claim):**
+The user includes the URL of their platform profile in the `links` array of their neusnet identity document, signed with their neusnet private key.
+
+For example, in the identity document:
+```json
+"links": [
+  { "url": "https://reddit.com/user/exampleuser", "label": "Reddit" }
+]
+```
+
+This asserts the reverse: "the neusnet identity `nid1...` is also the operator of this platform account."
+
+**Verification procedure:**
+A client verifying a claimed binding between a platform account and a neusnet identity should:
+1. Retrieve the platform profile and extract the `[neusnet:nid1...]` token from the bio or designated post.
+2. Resolve the neusnet identity document for the extracted key.
+3. Confirm that the identity document's `links` array contains the platform profile URL.
+4. If both checks pass, the binding is verified: the platform account and the neusnet identity are mutually attested as belonging to the same person.
+
+A unilateral claim in either direction alone — a key token in a bio with no corresponding `links` entry, or a `links` entry pointing to a profile with no key token — should be displayed as unverified.
+
+**Implications for ratings and affinity:**
+When a binding is verified, ratings given to content published under the platform account contribute to affinity with the verified neusnet identity, not merely to an anonymous platform URL. A third party who introduces a platform post as a bridged neusnet metadata file (metadata.md §6.3) and correctly sets the `author` field to the verified neusnet identity enables those ratings to flow into the trust graph against the author's full identity. Without verified binding, ratings accumulate against the platform URL as an opaque identifier with no connection to the trust graph.
+
+**Historical note:**
+This convention follows a well-established pattern: PGP users distributed their key fingerprints in email signatures and forum profiles for decades before email clients natively supported cryptographic identity. The neusnet key token is the same idea applied to the modern fragmented platform landscape. It requires no cooperation from the platform, no API access, and no changes to how the platform works — only the ability to edit a bio or post a message.
+
 ---
 
 ## 3. Keypair Generation and Storage
@@ -77,6 +121,8 @@ At identity creation, users are strongly encouraged to generate and register one
 Recovery keys are registered by including them in the user's initial identity document (Section 5). Once registered, a sufficient quorum of recovery keys (per the `recovery_threshold` field) can sign a rotation declaration (Section 6.2) to migrate the identity to a new primary key if the original is lost or compromised.
 
 Loss of the primary key with no registered recovery keys, or without a sufficient quorum of recovery keys available, is permanent loss of that identity. The protocol provides no further recovery mechanism — decentralized identity has no password reset.
+
+Users should treat recovery key distribution as a security-critical decision. A recovery key held by a third party is only as trustworthy as that party — if a sufficient quorum of recovery keys is compromised simultaneously with the primary key, an attacker could issue a fraudulent rotation declaration and seize control of the identity. Higher thresholds and broader key distribution increase resilience against key loss but also increase the attack surface for coordinated compromise. There is no universally correct answer; users should choose a configuration that reflects their own threat model.
 
 ---
 
@@ -140,6 +186,7 @@ An identity document is a signed JSON object:
   "bio":                "<string>",
   "avatar":             <content reference>,
   "links":              [ <link>, ... ],
+  "status":             "<string>",
   "recovery_keys":      ["<nid1... encoded public key>", "..."],
   "recovery_threshold": <integer>,
   "linked_ids":         [ <identity link>, ... ],
@@ -163,6 +210,8 @@ An identity document is a signed JSON object:
 
 **`links`** — array. Optional. A list of links to the user's presence elsewhere on the web. Each link is an object with `url` (string, required) and `label` (string, optional) fields.
 
+**`status`** — string. Optional. A short free-text presence or status message, analogous to a chat platform's status field (e.g. "writing", "away until Friday", "open to discussions about modal logic"). Unlike `bio`, which describes the user in a stable way, `status` is intended to be updated frequently and reflects the user's current state or mood. Clients may display status alongside the user's display name in tag-feed buddy lists and other social views. There is no protocol-level mechanism for distinguishing online/offline presence — `status` is purely a user-published string, and its freshness is indicated by the identity document's `timestamp` field.
+
 **`recovery_keys`** — array of strings. Optional but strongly recommended. One or more `nid1`-encoded public keys of the user's registered recovery keypairs. Publishing these establishes a verifiable record before they are needed. A single recovery key is the recommended default for most users.
 
 **`recovery_threshold`** — integer. Optional. The minimum number of recovery key signatures required to authorize a recovery rotation (see Section 6.2). Defaults to `1` if absent. Users who want stronger recovery security may register multiple recovery keys and set a higher threshold — for example, `recovery_threshold: 2` with three registered keys requires any two to cooperate. Must not exceed the length of `recovery_keys`.
@@ -177,11 +226,39 @@ An identity document is a signed JSON object:
 
 ### 5.3 Identity Document Discovery
 
-Given a native neusnet user identifier (`nid1...`), the address of that user's identity document is derived deterministically from their public key. On IPFS/IPNS deployments, the IPNS name used to host the identity document is the IPNS name derived from the user's primary keypair — meaning any client that knows a user's public key can compute where to look for their identity document without any additional lookup.
+Given a native neusnet user identifier (`nid1...`), the address of that user's identity document is derived deterministically from their public key as follows:
+
+**Step 1 — Derive the IPNS name from the keypair:**
+
+1. Take the 32-byte Ed25519 public key.
+2. Encode it as a `PublicKey` protobuf (key type `Ed25519`, data = the 32 bytes).
+3. Compute the SHA-256 multihash of the protobuf encoding.
+4. Encode as a CIDv1 with codec `libp2p-key` and base32 encoding.
+
+This produces the user's IPNS name — the `k51qzi5...`-style identifier seen in examples throughout these documents. This is the native IPFS/IPNS derivation for Ed25519 keypairs, compatible with standard IPFS tooling.
+
+**Step 2 — Resolve the IPNS name to a directory:**
+
+The IPNS name resolves to an IPFS UnixFS directory object. All per-user documents are published as named paths under this directory root:
+
+```
+ipns://<user's IPNS name>/
+├── identity.json       ← identity document (this section)
+├── endorsements.json   ← endorsement list (see hosting.md §8.1)
+└── rotations/          ← key rotation declarations (see Section 6)
+    └── <timestamp>.json
+```
+
+The identity document is retrieved at:
+```
+ipns://<user's IPNS name>/identity.json
+```
+
+This structure means a single IPNS record anchors all documents associated with a user's identity. Adding future per-user document types requires only publishing to a new path under the same root, with no change to the IPNS name or derivation formula.
 
 For alternative substrate identifiers, the discovery mechanism follows the conventions of that substrate:
 - AT Protocol DIDs: discoverable via the AT Protocol DID resolution mechanism
-- Nostr: published as a kind-0 metadata event on Nostr relays, or hosted at the IPNS name derived from the corresponding keypair
+- Nostr: published as a kind-0 metadata event on Nostr relays, or hosted at `ipns://<derived IPNS name>/identity.json` if the user also maintains an IPFS presence
 - W3C DIDs: resolved via the DID resolution mechanism specified for that DID method
 
 Clients encountering a user identifier for the first time should attempt identity document discovery lazily — it is not required before displaying or computing with rating records or metadata files that reference that identifier.
@@ -246,9 +323,13 @@ If all checks pass, the rotation is valid and treated identically to a standard 
 
 ### 6.3 Rotation Declaration Discovery
 
-When a client accesses an identity document, it should lazily check for rotation declarations associated with that identity. On IPFS/IPNS deployments, rotation declarations may be linked directly from the identity document or published at a well-known sub-path of the user's IPNS address. Clients that discover a rotation declaration should propagate it to peers alongside the identity document.
+When a client accesses an identity document, it should lazily check for rotation declarations associated with that identity. On IPFS/IPNS deployments, rotation declarations are published under the `/rotations/` path of the user's IPNS directory (see Section 5.3), with each declaration stored as a separate file named by its Unix timestamp:
 
-The exact storage path convention for rotation declarations on IPFS/IPNS deployments is an open question (see Section 8.1).
+```
+ipns://<user's IPNS name>/rotations/<timestamp>.json
+```
+
+Clients that discover a rotation declaration should propagate it to peers alongside the identity document. The `/rotations/` directory listing serves as an index of all rotation declarations ever issued by that identity.
 
 ---
 
@@ -282,11 +363,3 @@ Whether linked identities are treated as a single node or as distinct nodes in t
 - *Always treat separately*: treat all identities as distinct nodes regardless of owner preference
 
 This design ensures identity owners have meaningful control over their default presentation while preserving each user's ultimate sovereignty over their own trust graph computation.
-
----
-
-## 8. Open Questions
-
-**8.1 Rotation declaration storage path.** Section 6.3 recommends that rotation declarations be published at a well-known path relative to the user's IPNS address, but does not yet specify what that path is. A standard convention needs to be established.
-
-**8.2 Recovery key compromise.** If a sufficient quorum of recovery keys is compromised simultaneously with the primary key, an attacker could issue a fraudulent rotation declaration. This risk scales with the number of parties holding recovery keys. Users should treat recovery key distribution as a security-critical decision; the protocol cannot protect against a fully compromised key set.
