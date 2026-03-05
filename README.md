@@ -181,16 +181,16 @@ The organizing unit of neusnet is not a room, server, or group — it is a **tag
 
 This maps directly onto Usenet's newsgroup model — `#philosophy` is `rec.arts.philosophy` without the hierarchy and without the server operator who could shut it down. A subset of people wanting a more focused space can simply adopt a more specific tag. Tags support an optional dot notation for expressing explicit hierarchy: `#philosophy.epistemology` asserts that this post is about epistemology as a subtopic of philosophy, while `#philosophy-basement` is simply a flat tag whose name happens to contain "philosophy". A community can self-organise under `#philosophy.basement` to make that containment relationship explicit, or use a flat tag to remain independent. Either way, the community is owned by no one. Searching for `#epistemology` returns posts tagged `#philosophy.epistemology` and `#psychology.epistemology` alike — hierarchical tagging adds precision without creating silos or penalising discoverability.
 
-### Feeds as Channels
+### Channels as Community Spaces
 
-A client that lets users save tag searches as named feeds provides the Discord channel experience without the Discord power structure. A user might configure:
+A client that lets users save tag searches as named **channels** provides the Discord channel experience without the Discord power structure. A user might configure:
 
-- A `#music` feed
-- A `#philosophy` feed
-- A `#philosophy-basement` feed
-- A combined feed for `#star-trek` and `#star-wars`
+- A `#music` channel
+- A `#philosophy` channel
+- A `#philosophy.epistemology` subchannel
+- A `#philosophy.basement` channel for a specific community
 
-Each feed is a personalized, trust-graph-filtered view of all posts under those tags — the user's own curated channel list, assembled from the global tag space, answerable to no one but themselves. Two members of the same tag-community see different views of it based on their respective trust graphs. There is no single authoritative view, no algorithm imposed from above, no moderator whose removal of a post affects what you see.
+Each channel is a personalized, trust-graph-filtered view of all posts under those tags — the user's own curated space, assembled from the global tag space, answerable to no one but themselves. Two members of the same tag-community see different views of it based on their respective trust graphs. There is no single authoritative view, no algorithm imposed from above, no moderator whose removal of a post affects what you see. Channels are specified in detail in ratings.md §6.4–6.6.
 
 ### The Schism Problem
 
@@ -226,6 +226,20 @@ In an IPFS deployment, clients should consider automatically **pinning** content
 
 Conversely, content that has been retrieved and processed but rated negatively can be **unpinned and garbage-collected** after a grace period. The user has contributed to the network by retrieving it; they are not obligated to continue hosting it.
 
+### Channels
+
+A **channel** is a persistent, user-defined feed rooted in one or more tags, optionally extended with a local taxonomy. Clients should support channels as a first-class navigation element — the primary way users organise their ongoing reading and participation rather than performing ad hoc searches.
+
+The recommended channel interface provides:
+
+**Browsing affordances.** When viewing a channel, the client should surface taxonomy suggestions derived from the tagging patterns of trusted users: broader parent tags to browse, narrower subtags to add as subchannels, and related tags that frequently co-occur. Accepting a subtag suggestion adds it to the channel's local taxonomy, so future posts carrying that tag appear in the channel even if they carry no explicit hierarchical relationship to the root tag.
+
+**Post composition.** Composing a post from within a channel should pre-populate the appropriate tag. For a root channel (`#philosophy`), the post is tagged `#philosophy`. For a subchannel (`#philosophy → #epistemology`), the post is tagged `#philosophy.epistemology`. This removes the friction of manual tagging for conversational posts and, crucially, ensures that participation in a channel generates the tagging signal that makes the channel's taxonomy visible to other users' clients through the trust graph. Users simply post into a channel as they would send a message to an IRC channel; the tagging happens automatically and propagates the community's conceptual structure.
+
+**Top-level discovery.** The client should offer a browsable index of tag components derived from posts by positive-affinity users — a personal "topics" view that reflects what the user's corner of the network actually discusses. This serves as the entry point for users building their initial channel set and for exploring beyond established channels.
+
+The naming is intentional. IRC channels are `#`-demarcated; neusnet tags are `#`-demarcated. The `#` that prefixes a tag and the `#` that prefixes an IRC channel name are the same symbol doing the same job. A neusnet channel rooted in `#philosophy` is, in a direct sense, `#philosophy` — the same kind of named, topic-scoped gathering place, but without any server that owns it or operator who can kick you out.
+
 ### Cached Rating Distribution
 
 Proximal peers should serve not only their own rating records but also **cached copies of rating records** they have retrieved from their own proximal peers. This means that when your client fetches ratings from a directly-connected peer, it receives an immediate approximation of the broader graph — ratings from peers-of-peers and beyond — without having to crawl outward hop by hop before anything is useful.
@@ -238,6 +252,8 @@ Your client then operates in two modes simultaneously:
 This lazy verification step also provides a natural integrity check. A proximal peer cannot silently manipulate what you see from people further out without the manipulation being detectable as soon as your client makes direct contact with those further peers and finds a discrepancy. Since all rating records are cryptographically signed by their original authors, any tampering is immediately evident. And any peer caught serving falsified or selectively withheld cached ratings loses affinity with you as a consequence — reducing their influence over your view going forward. The incentive structure discourages manipulation without requiring a separate enforcement mechanism.
 
 
+
+## What This Is Not
 
 - **Not a moderation system.** neusnet does not remove or suppress content globally. Content that is invisible to you may be perfectly visible to someone else. The platform has no global moderators and no central content policy.
 - **Not anonymous.** Posts and ratings are signed with keypairs. Pseudonymity is possible (your keypair need not be linked to your real identity), but the system does not provide anonymity guarantees. Users who need strong anonymity should route through appropriate tools independently.

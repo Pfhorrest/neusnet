@@ -341,6 +341,43 @@ This design ensures that using hierarchical dot syntax never harms discoverabili
 
 Clients should offer users the option to search a tag **exactly** — matching only posts tagged with that precise string and no sub-components — for cases where a user wants to see only the top-level tag without its entire subtree.
 
+### 6.4 Channels: Persistent Tag-Rooted Feeds
+
+A **channel** is a user-defined, persistent, mutable collection of tags that a client treats as a unified feed. The term is chosen deliberately: just as [IRC](https://datatracker.ietf.org/doc/html/rfc1459) channels are demarcated by `#`, neusnet channels are rooted in `#`-prefixed tags. The hash that marks a tag and the hash that marks an IRC channel are the same symbol doing the same job — `#philosophy` is at once a tag on a post and the name of a channel a user can inhabit.
+
+A channel has:
+- A **root tag** (e.g. `#philosophy`)
+- An optional **local taxonomy** — a set of additional tags the user has chosen to include as if they were subtags of the root, regardless of how individual posters have tagged their posts
+- A **display name**, defaulting to the root tag
+
+The local taxonomy is the user's personal extension of the hierarchical dot syntax into territory the poster hasn't explicitly declared. A user who adds `#epistemology` to their `#philosophy` channel's local taxonomy will see `#epistemology` posts in their `#philosophy` feed even when those posts carry no `#philosophy.*` tag. Their client treats `#epistemology` as a child of `#philosophy` for their own browsing purposes — a private taxonomic assertion that affects only their own view.
+
+Channels may have **subchannels**: a `#philosophy` channel might contain a `#philosophy.epistemology` subchannel, which itself might contain a `#philosophy.epistemology.reliabilism` subchannel. The channel hierarchy mirrors the tag hierarchy, but is shaped by the user's own taxonomy rather than derived purely from tag strings.
+
+### 6.5 Trust-Graph Taxonomy Inference
+
+A client can infer a suggested taxonomy from the tagging patterns of trusted users without any new protocol objects. The inference is purely local and client-side, operating on post metadata already retrieved as part of normal trust graph operation.
+
+**Parent suggestions:** When viewing a channel rooted at `#X`, if posts in that channel are frequently tagged `#Y.X` by high-affinity users, the client may suggest `#Y` as a broader context — "people you trust often place `#X` under `#Y`. Browse `#Y`?"
+
+**Child suggestions:** When viewing a channel rooted at `#X`, if posts frequently carry `#X.Z` tags from high-affinity users, the client may suggest adding `#X.Z` as a subchannel — "people you trust often discuss `#Z` under `#X`. Add it as a subchannel?"
+
+**Sibling and related tag suggestions:** Tags that frequently co-occur with `#X` in trusted content are natural candidates to surface as related browsing destinations.
+
+**Top-level discovery:** The most-used root tag components across all posts from positive-affinity users form a personal "browse by topic" index — a table of contents shaped entirely by what the user's corner of the network actually discusses. This is the cold-start discovery surface for new users and for users exploring beyond their existing channels.
+
+Because these suggestions are derived from the tagging behavior of trusted users, two users with different trust graphs will receive different taxonomy suggestions for the same tag. A philosopher's network may consistently place `#epistemology` under `#philosophy`; a cognitive scientist's network may place it under `#psychology`. Neither is authoritative. The protocol makes no global claim about how concepts relate — it only reflects how the people you trust have chosen to frame them.
+
+### 6.6 Channels as a Communal Taxonomy Mechanism
+
+The dot syntax, channel taxonomy, and trust graph compose into a self-reinforcing loop that is worth making explicit.
+
+When a user accepts a taxonomy suggestion — adding `#epistemology` as a subchannel of `#philosophy` in their local channel — and subsequently posts into that channel, their client tags the post `#philosophy.epistemology`. That tagging decision is now visible to their trusted peers as a data point: this user treats epistemology as a subtopic of philosophy. Those peers' clients, seeing this pattern from a trusted source, may in turn suggest the same relationship in their own channel taxonomies. If they accept and post accordingly, the pattern propagates further.
+
+No explicit taxonomy statement is ever published. No authority declares that epistemology belongs under philosophy. The relationship emerges from the accumulation of individual tagging choices, weighted by trust, surfaced as suggestions, and propagated through acceptance and participation. The result is a living, distributed, trust-weighted ontology that is always overridable by any individual user — and that reflects the actual conceptual framing of each user's community rather than an imposed external classification.
+
+This is also what gives the dot syntax a purpose beyond what flat multi-tagging achieves. A post tagged `#philosophy #epistemology` contributes two independent signals; a post tagged `#philosophy.epistemology` contributes the additional signal that these concepts are related *in this post's framing*. That relational signal is what channel taxonomy inference is built on. The dot syntax is the mechanism by which individual framing choices accumulate into communal taxonomic knowledge.
+
 ---
 
 ## 7. Wire Format
