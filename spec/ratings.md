@@ -354,19 +354,26 @@ The local taxonomy is the user's personal extension of the hierarchical dot synt
 
 Channels may have **subchannels**: a `#philosophy` channel might contain a `#philosophy.epistemology` subchannel, which itself might contain a `#philosophy.epistemology.reliabilism` subchannel. The channel hierarchy mirrors the tag hierarchy, but is shaped by the user's own taxonomy rather than derived purely from tag strings.
 
-### 6.5 Trust-Graph Taxonomy Inference
+### 6.5 Trust-Graph Taxonomy Suggestions
 
-A client can infer a suggested taxonomy from the tagging patterns of trusted users without any new protocol objects. The inference is purely local and client-side, operating on post metadata already retrieved as part of normal trust graph operation.
+Because `#philosophy.epistemology` is automatically included in a `#philosophy` channel by the prefix search rules of §6.3, no suggestion is needed for subtags that already carry the channel's root component. The only suggestions clients need to make are **cross-hierarchy component inclusions**: cases where a tag component appears frequently in trusted content *without* the channel's root prefix, and the user might want to pull it in anyway.
 
-**Parent suggestions:** When viewing a channel rooted at `#X`, if posts in that channel are frequently tagged `#Y.X` by high-affinity users, the client may suggest `#Y` as a broader context — "people you trust often place `#X` under `#Y`. Browse `#Y`?"
+Concretely: if posts in a user's `#philosophy` channel frequently carry `#philosophy.epistemology` tags, the client may observe that bare `#epistemology` posts — tagged without any `#philosophy` prefix — also exist and might be of interest. It can suggest adding `#epistemology` as a local taxonomy extension of the `#philosophy` channel, which would include all posts where `epistemology` appears as a tag segment anywhere, regardless of what surrounds it.
 
-**Child suggestions:** When viewing a channel rooted at `#X`, if posts frequently carry `#X.Z` tags from high-affinity users, the client may suggest adding `#X.Z` as a subchannel — "people you trust often discuss `#Z` under `#X`. Add it as a subchannel?"
+**Disclosure requirement.** Because the client has no way to know whether a given suggestion is a good one (`#epistemology` — probably welcome) or a poor one (`#basement` — probably too broad), every suggestion must be accompanied by a plain-language description of its exact scope. The suggested wording:
 
-**Sibling and related tag suggestions:** Tags that frequently co-occur with `#X` in trusted content are natural candidates to surface as related browsing destinations.
+> "Users you trust often tag posts `#philosophy.epistemology`. Would you like to also include posts tagged `#epistemology` (without a `#philosophy` prefix) in your `#philosophy` channel? This will include *all* posts where `epistemology` appears as a tag segment anywhere — for example, `#psychology.epistemology` and bare `#epistemology` alike."
 
-**Top-level discovery:** The most-used root tag components across all posts from positive-affinity users form a personal "browse by topic" index — a table of contents shaped entirely by what the user's corner of the network actually discusses. This is the cold-start discovery surface for new users and for users exploring beyond their existing channels.
+The user should be presented with meaningful responses beyond simple acceptance:
 
-Because these suggestions are derived from the tagging behavior of trusted users, two users with different trust graphs will receive different taxonomy suggestions for the same tag. A philosopher's network may consistently place `#epistemology` under `#philosophy`; a cognitive scientist's network may place it under `#psychology`. Neither is authoritative. The protocol makes no global claim about how concepts relate — it only reflects how the people you trust have chosen to frame them.
+- **Accept**: add the component as a local taxonomy extension of this channel.
+- **Dismiss**: do not suggest this component for this channel again.
+- **Accept and uprate `#X.Y`**: accept the inclusion and issue a positive rating for the tag, signalling to peers that this is a tagging pattern worth propagating.
+- **Dismiss and downrate `#X.Y`**: dismiss the suggestion and issue a negative rating for the tag, signalling that this tagging pattern is poor or unwelcome. Because tag ratings flow through the normal trust graph, this naturally reduces the influence of peers who use the tag heavily and suppresses similar suggestions derived from their tagging behavior.
+
+This reuses the existing tag rating mechanism (ratings.md §3.3) rather than introducing any separate reputation system for tagging quality. Tag quality judgments made at the channel taxonomy UI are the same object as tag ratings made anywhere else, and propagate through the trust graph identically.
+
+**Top-level discovery.** The most-used root tag components across posts from positive-affinity users form a personal browsable topic index — a starting point for building new channels and exploring beyond existing ones.
 
 ### 6.6 Channels as a Communal Taxonomy Mechanism
 
