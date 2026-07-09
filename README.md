@@ -167,6 +167,12 @@ This suggests a realistic adoption path: neusnet begins as a curation and identi
 
 ---
 
+## Client Implementation Recommendations
+
+Recommended (non-mandatory) client behaviors and interface patterns — including endorsed content pinning, the channel interface, cached rating distribution, rating dimension iconography, and a proposal for user-operated AI proxy identities — are collected in [client-recommendations.md](spec/client-recommendations.md).
+
+---
+
 ## Communities Without Owners
 
 neusnet was originally conceived in the context of forum-like platforms — asynchronous discussion where posts accumulate over hours or days. But the line between "forum" and "chat" has always been blurry: people have real-time exchanges on forums, and chat threads stretch across days. The underlying problem neusnet addresses applies equally to both.
@@ -209,65 +215,6 @@ Clients can compose this with the feed model to produce a **buddy list** for any
 neusnet does not attempt to replace the purely ephemeral layer of chat platforms — typing indicators, voice and video, instantaneous delivery guarantees. For those, [Matrix](https://matrix.org) and [XMPP](https://xmpp.org) are appropriate transports and neusnet is designed to interoperate with them (see hosting.md §5). The division of responsibility is clean: neusnet handles everything above the threshold of content worth persisting; real-time transient signaling is delegated to protocols built for it. A client could present both in a unified interface without either layer needing to subsume the other.
 
 ---
-
-## Client Implementation Recommendations
-
-The following are not protocol requirements but represent good practice for neusnet client software.
-
-### The Endorsed Content List
-
-Every user's set of positively-rated post identifiers — regardless of where those posts are hosted — functions as a **unified discovery feed**. Whether an identifier in that list is an IPFS CID, a BitTorrent magnet link, or a URL to a post on Mastodon or Bluesky, peers pull from it the same way. This means the pinning behavior and the gossip discovery protocol are the same mechanism viewed from two angles: pinning is what you do locally with content you endorse, and sharing your list of endorsed identifiers is how peers discover new content. One list serves both purposes across all hosting backends simultaneously.
-
-In an IPFS deployment, clients should consider automatically **pinning** content from this list — keeping a local copy and contributing to its availability on the network:
-
-- **Metadata files** for all positively-rated posts should always be pinned locally — they are small and their availability is important for graph traversal.
-- **Full content payloads** (especially large media files) might only be pinned above a higher rating threshold, or only for content below a configurable file size limit, to avoid undue storage consumption.
-- If the user subscribes to a remote pinning service, highly-rated content can be pinned there too, ensuring availability when the local machine is offline. Which pinning service to use, and at what threshold, should be **user-configured** — the client should not choose a remote service on the user's behalf.
-
-Conversely, content that has been retrieved and processed but rated negatively can be **unpinned and garbage-collected** after a grace period. The user has contributed to the network by retrieving it; they are not obligated to continue hosting it.
-
-### Channels
-
-A **channel** is a persistent, user-defined feed rooted in one or more tags, optionally extended with a local taxonomy. Clients should support channels as a first-class navigation element — the primary way users organise their ongoing reading and participation rather than performing ad hoc searches.
-
-The recommended channel interface provides:
-
-**Browsing affordances.** Subtags that share the channel's root component (e.g. `#philosophy.epistemology` in a `#philosophy` channel) are included automatically by the tag search rules and need no suggestion. The only suggestions a client needs to make are **cross-hierarchy component inclusions**: when posts in a channel frequently carry a subtag whose leaf component also appears as a bare tag or under a different parent, the client may suggest including that component more broadly. For example, if `#philosophy.epistemology` is common in a user's `#philosophy` channel, the client might ask whether bare `#epistemology` posts should also be included. Every such suggestion must state its exact scope plainly — "this will include all posts where `epistemology` appears as a tag segment anywhere" — because the client cannot know whether the suggestion is a good one or an overly broad one; only the user can make that call. Users can accept, or permanently dismiss a suggestion to signal that the tagging pattern that generated it isn't one worth reinforcing.
-
-**Post composition.** Composing a post from within a channel should pre-populate the appropriate tag. For a root channel (`#philosophy`), the post is tagged `#philosophy`. For a subchannel (`#philosophy → #epistemology`), the post is tagged `#philosophy.epistemology`. This removes the friction of manual tagging for conversational posts and, crucially, ensures that participation in a channel generates the tagging signal that makes the channel's taxonomy visible to other users' clients through the trust graph. Users simply post into a channel as they would send a message to an IRC channel; the tagging happens automatically and propagates the community's conceptual structure.
-
-**Top-level discovery.** The client should offer a browsable index of tag components derived from posts by positive-affinity users — a personal "topics" view that reflects what the user's corner of the network actually discusses. This serves as the entry point for users building their initial channel set and for exploring beyond established channels.
-
-The naming is intentional. IRC channels are `#`-demarcated; neusnet tags are `#`-demarcated. The `#` that prefixes a tag and the `#` that prefixes an IRC channel name are the same symbol doing the same job. A neusnet channel rooted in `#philosophy` is, in a direct sense, `#philosophy` — the same kind of named, topic-scoped gathering place, but without any server that owns it or operator who can kick you out.
-
-### Cached Rating Distribution
-
-Proximal peers should serve not only their own rating records but also **cached copies of rating records** they have retrieved from their own proximal peers. This means that when your client fetches ratings from a directly-connected peer, it receives an immediate approximation of the broader graph — ratings from peers-of-peers and beyond — without having to crawl outward hop by hop before anything is useful.
-
-Your client then operates in two modes simultaneously:
-
-- **Fast approximate mode**: cached ratings from proximal peers are available immediately on startup and provide a useful working approximation of the full graph.
-- **Slow precise mode**: your client lazily reaches out directly to more distal peers to verify whether the cached versions it received are current, updating its local view as fresher data arrives.
-
-This lazy verification step also provides a natural integrity check. A proximal peer cannot silently manipulate what you see from people further out without the manipulation being detectable as soon as your client makes direct contact with those further peers and finds a discrepancy. Since all rating records are cryptographically signed by their original authors, any tampering is immediately evident. And any peer caught serving falsified or selectively withheld cached ratings loses affinity with you as a consequence — reducing their influence over your view going forward. The incentive structure discourages manipulation without requiring a separate enforcement mechanism.
-
-### Rating Dimension UI
-
-The four core rating dimensions — True, Good, Important, and New — can be difficult to convey through labels alone. Clients are encouraged to represent them with icons that communicate their intended meaning at a glance, supplemented by brief tooltip descriptions for new users.
-
-The four dimensions fall naturally into two pairs along two axes, which the visual design can reflect:
-
-**Content axes** — dimensions that evaluate the content's relationship to reality and ethics:
-- **True** (factual accuracy): a checkmark for positive, an ✗ for negative. These symbols are effectively universal for correct/incorrect.
-- **Good** (ethical and aesthetic quality): a smiling face for positive, a frowning face for negative.
-
-**Conversation axes** — dimensions that evaluate the content's relationship to the ongoing discourse:
-- **Important** (significance, worth attention): an exclamation mark for positive, an ellipsis for negative. The ellipsis naturally conveys "so what?" or "going nowhere" — a visually apt rendering of unimportance.
-- **New** (originality, not a rehash): this is the hardest dimension to iconify, since "new" means *novel and original* rather than *recently published*. Possible approaches include a shine or sparkle versus dust or trash, a lightbulb (original thought) versus a recycling symbol (rehash), or an excited face versus a yawn. No obvious universal symbol exists here; clients should experiment and tooltips are especially important for this dimension.
-
-Grouping the two content axes together and the two conversation axes together in the UI — whether by proximity, colour, or a subtle divider — can help users build an intuition for what each dimension is actually measuring and why the four are independent of one another.
-
-
 
 ## What This Is Not
 

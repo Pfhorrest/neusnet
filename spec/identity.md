@@ -2,7 +2,7 @@
 
 *Working draft — design phase*
 
-This document specifies the neusnet identity model: how users are identified, how their signatures are verified, and how identity persists, rotates, and optionally presents itself to other users. It is a companion to [README.md](../README.md) (overview and motivation), [ratings.md](ratings.md) (Layer 1: Rating Protocol), [metadata.md](metadata.md) (Layer 2: Content Metadata), and [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution).
+This document specifies the neusnet identity model: how users are identified, how their signatures are verified, and how identity persists, rotates, and optionally presents itself to other users. It is a companion to [README.md](../README.md) (overview and motivation), [ratings.md](ratings.md) (Layer 1: Rating Protocol), [metadata.md](metadata.md) (Layer 2: Content Metadata), [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution), and [client-recommendations.md](client-recommendations.md) (client implementation recommendations).
 
 ---
 
@@ -191,6 +191,8 @@ An identity document is a signed JSON object:
   "recovery_threshold": <integer>,
   "linked_ids":         [ <identity link>, ... ],
   "aggregate_linked":   <boolean>,
+  "proxy":              <boolean>,
+  "operator":           "<user identifier>",
   "timestamp":          <unix timestamp>,
   "signature":          "<signature over all other fields>"
 }
@@ -219,6 +221,10 @@ An identity document is a signed JSON object:
 **`linked_ids`** — array. Optional. A list of other neusnet identities the user voluntarily declares as also belonging to them. See Section 7.
 
 **`aggregate_linked`** — boolean. Optional. The user's preferred default for how other users' clients should treat their linked identities in trust graph computation. `true` means the user prefers their linked identities to be treated as a single node for affinity purposes; `false` (the default if absent) means they prefer them treated as distinct nodes. Other users' clients may override this preference per their own settings — see Section 7.1.
+
+**`proxy`** — boolean. Optional, defaults to `false`. Must be `true` if this identity is an automated agent operating on behalf of another identity — for example, an AI system modeling a human user's rating and posting behavior (see client-recommendations.md, "Personal AI Proxies"). A proxy identity is structurally distinct from a voluntarily linked alternate identity (Section 7): a proxy is a subordinate, derivative agent, not a peer account, and must be disclosed as such rather than presented as an equal identity. Clients must visibly and unambiguously mark all content from a `proxy: true` identity as automated in every context where it appears, not only on the identity document itself.
+
+**`operator`** — string. Required if `proxy` is `true`. The user identifier of the human (or other non-proxy identity) this proxy acts on behalf of. A proxy identity's `links` array should also point back to its operator's identity document, and — where the operator wishes to acknowledge the proxy — the operator's own identity document may list the proxy in `links` as well, though this is not required for the proxy's disclosure obligations to be satisfied. Only the `proxy` and `operator` fields on the proxy's own identity document are authoritative for disclosure purposes.
 
 **`timestamp`** — integer. Unix timestamp of when this version of the identity document was published.
 

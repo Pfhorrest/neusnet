@@ -2,7 +2,7 @@
 
 *Working draft — design phase*
 
-This document specifies how neusnet content — post metadata files, content payloads, rating collections, and identity documents — is hosted, retrieved, and distributed across the network. It is a companion to [ratings.md](ratings.md), [metadata.md](metadata.md), [identity.md](identity.md), and [README.md](../README.md).
+This document specifies how neusnet content — post metadata files, content payloads, rating collections, and identity documents — is hosted, retrieved, and distributed across the network. It is a companion to [ratings.md](ratings.md), [metadata.md](metadata.md), [identity.md](identity.md), [README.md](../README.md), and [client-recommendations.md](client-recommendations.md) (client implementation recommendations).
 
 ---
 

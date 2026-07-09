@@ -2,7 +2,7 @@
 
 *Working draft — design phase*
 
-This document specifies the neusnet content metadata format — the atomic unit of a neusnet post. It is a companion to [README.md](../README.md) (overview and motivation), [ratings.md](ratings.md) (Layer 1: Rating Protocol), [identity.md](identity.md) (Layer 3: Identity), and [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution).
+This document specifies the neusnet content metadata format — the atomic unit of a neusnet post. It is a companion to [README.md](../README.md) (overview and motivation), [ratings.md](ratings.md) (Layer 1: Rating Protocol), [identity.md](identity.md) (Layer 3: Identity), [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution), and [client-recommendations.md](client-recommendations.md) (client implementation recommendations).
 
 The examples in this document use [IPFS](https://ipfs.tech)/IPNS terminology (CIDs, IPNS names) as the reference implementation. All concepts generalize to other hosting substrates; see Section 2 for the abstract model and Section 8 for notes on non-IPFS deployments.
 

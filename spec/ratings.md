@@ -2,7 +2,7 @@
 
 *Working draft — design phase*
 
-This document specifies the neusnet ratings and trust graph protocol in enough detail to guide implementation and invite critique. It is a companion to [README.md](../README.md) (overview and motivation), [metadata.md](metadata.md) (Layer 2: Content Metadata), [identity.md](identity.md) (Layer 3: Identity), and [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution). Where the README describes *what* and *why*, this document describes *how*.
+This document specifies the neusnet ratings and trust graph protocol in enough detail to guide implementation and invite critique. It is a companion to [README.md](../README.md) (overview and motivation), [metadata.md](metadata.md) (Layer 2: Content Metadata), [identity.md](identity.md) (Layer 3: Identity), [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution), and [client-recommendations.md](client-recommendations.md) (client implementation recommendations). Where the README describes *what* and *why*, this document describes *how*.
 
 ---
 
