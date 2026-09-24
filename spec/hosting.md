@@ -128,7 +128,7 @@ Mapping neusnet concepts onto NNTP is instructive:
 | Newsgroup | Tag |
 | Article | Post |
 | Message-ID header | Stable identifier |
-| References header | `parent` field |
+| References header | `parents` field |
 | From header | `author` field |
 | Subject header | `subject` field |
 | Server peering | Peer gossip |

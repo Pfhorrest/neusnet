@@ -28,7 +28,7 @@ Every neusnet post has two distinct identifiers serving different purposes.
 **The version identifier** is the content-addressed identifier of a specific metadata file — for example, an IPFS CID on IPFS-based deployments, or an equivalent immutable identifier on other substrates. The version identifier:
 - Changes with every edit, uniquely identifying each revision
 - Is what rating records reference as the `item` field, permanently recording which exact version of a post was rated
-- Is what `parent` fields in reply posts reference, recording which exact version was being replied to
+- Is what `parents` fields in reply posts reference, recording which exact version(s) were being replied to
 - Is what `previous` fields reference to form the version chain
 
 Clients aggregate ratings across all versions of a post by building the canonical version history from the stable `id` (see Section 5.3) and summing ratings across all versions in that history.
@@ -63,7 +63,7 @@ A metadata file is a JSON object. Fields marked **required** must be present in 
   "summary":        "<string>",
   "tags":           ["<normalized tag>", "..."],
   "content":        [ <content-reference>, "..." ],
-  "parent":         "<version identifier of parent post>",
+  "parents":        [ "<version identifier of parent post>", "..." ],
   "previous":       "<version identifier of previous version of this post>",
   "timestamp":      <unix timestamp, integer seconds>,
   "signature":      "<cryptographic signature>"
@@ -94,7 +94,9 @@ A metadata file is a JSON object. Fields marked **required** must be present in 
 
 At least one of `subject`, `summary`, or short inline content should be present so clients have something to display in feed views without fetching the full payload. This is a client recommendation, not a protocol requirement.
 
-**`parent`** — string. The version identifier of the metadata file of the post this is a reply to. Omitted for top-level posts. References the specific version being replied to, not the stable identifier — permanently recording the exact content the reply was responding to.
+**`parents`** — array of strings. Optional; omitted or empty for top-level posts. The version identifiers of the metadata files of the posts this post is replying to. Each reference is to the specific version being replied to, not the stable identifier — permanently recording the exact content the reply was responding to.
+
+A post may have more than one parent. This is the normal and expected way to represent a reply that directly addresses multiple prior posts at once — for example, a post synthesizing or contrasting the positions of several interlocutors in a conversation, or a reply directed jointly at two branches of a discussion that had diverged. Clients should treat the discussion structure formed by `parents` references as a directed graph rather than a tree: a post may have multiple parents, and a single post may in turn be the parent of many replies. Clients rendering threaded views should account for a post appearing under more than one parent, rather than assuming each post has exactly one place in a single hierarchy.
 
 **`previous`** — string. The version identifier of the immediately preceding version of this post's own metadata file. Omitted in the first published version. Forms a backwards-linked chain that clients can traverse to reconstruct version history. On hosting substrates with native versioning (e.g. IPFS/IPNS), this field is redundant but included for clients that do not query native version history. On substrates without native versioning, this field is the primary mechanism for version chain traversal.
 
@@ -322,14 +324,45 @@ A reply post with redundant content references, edit history, summary, and tags:
       "hash":      "sha256:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
     }
   ],
-  "parent":    "<version identifier of parent post>",
+  "parents":   ["<version identifier of parent post>"],
   "previous":  "<version identifier of prior version of this post>",
   "timestamp": 1740003600,
   "signature": "sig1abc..."
 }
 ```
 
-## Appendix C: Unsigned Bridged Post
+## Appendix C: Multi-Parent Synthesis Reply
+
+A post replying jointly to two prior posts by different authors — for example, summarizing and reconciling the positions of two interlocutors in a conversation:
+
+```json
+{
+  "neusnet_version": 1,
+  "type":      "post",
+  "id":        "ipns://k51qzi5uqu5dh6lfh1....",
+  "author":    "nid1F3sAqQpLzFtKmVbRwXcNyHjDgEoIuPe...",
+  "subject":   "Re: The moderation debate — a synthesis",
+  "summary":   "Both positions share more ground than the disagreement suggests.",
+  "tags":      ["decentralization", "moderation", "trust-graphs"],
+  "content":   [
+    {
+      "uri":            "inline:",
+      "mime_type":      "text/plain",
+      "inline_content": "You're both closer than you think. Alice's Sybil-resistance concern and Bob's cold-start concern are two sides of the same tradeoff..."
+    }
+  ],
+  "parents":   [
+    "ipns://k51qzi5uqu5dh6lfh0.../version/abc",
+    "ipns://k51qzi5uqu5dh6lfh2.../version/def"
+  ],
+  "timestamp": 1740003800,
+  "signature": "sig1abc..."
+}
+```
+
+This post has two entries in `parents`, one for each post it is directly responding to. Clients traversing the discussion graph should display this post as a reply to both, rather than forcing a choice of a single parent.
+
+## Appendix D: Unsigned Bridged Post
 
 A Bluesky post introduced to neusnet by a third party:
 
