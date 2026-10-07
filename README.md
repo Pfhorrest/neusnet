@@ -167,12 +167,6 @@ This suggests a realistic adoption path: neusnet begins as a curation and identi
 
 ---
 
-## Client Implementation Recommendations
-
-Recommended (non-mandatory) client behaviors and interface patterns — including endorsed content pinning, the channel interface, cached rating distribution, rating dimension iconography, and a proposal for user-operated AI proxy identities — are collected in [client-recommendations.md](spec/client-recommendations.md).
-
----
-
 ## Communities Without Owners
 
 neusnet was originally conceived in the context of forum-like platforms — asynchronous discussion where posts accumulate over hours or days. But the line between "forum" and "chat" has always been blurry: people have real-time exchanges on forums, and chat threads stretch across days. The underlying problem neusnet addresses applies equally to both.
@@ -215,6 +209,12 @@ Clients can compose this with the feed model to produce a **buddy list** for any
 neusnet does not attempt to replace the purely ephemeral layer of chat platforms — typing indicators, voice and video, instantaneous delivery guarantees. For those, [Matrix](https://matrix.org) and [XMPP](https://xmpp.org) are appropriate transports and neusnet is designed to interoperate with them (see hosting.md §5). The division of responsibility is clean: neusnet handles everything above the threshold of content worth persisting; real-time transient signaling is delegated to protocols built for it. A client could present both in a unified interface without either layer needing to subsume the other.
 
 ---
+
+## Client Implementation Recommendations
+
+Recommended (non-mandatory) client behaviors and interface patterns — including endorsed content pinning, the channel interface, cached rating distribution, rating dimension iconography, and a proposal for user-operated AI proxy identities — are collected in [client-recommendations.md](client-recommendations.md).
+
+
 
 ## What This Is Not
 
