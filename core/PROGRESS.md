@@ -8,17 +8,24 @@ read this whole file before writing any code — it also records decisions
 you shouldn't need to re-litigate.
 
 **Last updated:** this entry was written during the session that added
-post metadata objects (validation, creation, trust-level computation) on
-top of the previous session's encoding/canonicalization/identity/tags
-foundation.
+rating records, the rating collection wrapper, and — the big one — the
+full trust graph: derived/direct/composite affinity, confidence, the
+breadth-first effective-affinity traversal, and effective post scores
+(ratings.md §2–§5). This is the mathematical core of the whole protocol;
+everything before it was schema/crypto plumbing in service of this.
 
 ## Current state at a glance
 
-- **184 tests, all passing.** `npm test` is green.
-- **~99.6% coverage** (statements/branches, 100% functions/lines) across
-  every implemented module — the single uncovered branch is a documented,
-  genuinely-unreachable defensive check (see `bytesEqual` in
-  `src/metadata/post.ts`), not a gap worth forcing a test around.
+- **271 tests, all passing.** `npm test` is green.
+- **~99.8% statement coverage, ~98% branch coverage, 100%
+  functions/lines** across every implemented module — remaining gaps are
+  small branch-level edge permutations with real diminishing returns. A
+  couple of genuinely-unreachable defensive checks that showed up as
+  coverage gaps in `trust-graph.ts` were _removed_ rather than tested
+  (see "Decisions made" below) — don't reintroduce them. The one
+  remaining uncovered line (`bytesEqual` in `src/metadata/post.ts`) is
+  similarly documented as unreachable in a code comment, not a gap worth
+  forcing a test around.
 - **Typecheck clean** (`npm run typecheck`), **lint clean** (`npm run
 lint`, strict type-aware ESLint rules), **format clean** (`npm run
 format:check`).
@@ -34,23 +41,26 @@ regressed before doing anything else, if you're resuming this.
 
 ## Implemented and fully tested
 
-| Module                                  | File                                      | Spec section         | Notes                                                                                                                                                                  |
-| --------------------------------------- | ----------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| base64url encoding                      | `src/encoding/base64url.ts`               | identity.md §4.3     | Portable (no `Buffer`); RFC 4648 §5, no padding                                                                                                                        |
-| Base58 (Bitcoin alphabet)               | `src/encoding/base58.ts`                  | identity.md §2       | Alphabet is a literal constant copied from the spec, not trusted from a third-party package                                                                            |
-| JCS canonicalization                    | `src/canonicalization/jcs.ts`             | identity.md §4.2     | Wraps the `canonicalize` npm package (RFC 8785's own editor's implementation) rather than hand-rolling number serialization                                            |
-| Ed25519 keypairs + `nid1` IDs           | `src/identity/keypair.ts`                 | identity.md §2–§3    | Wraps `@noble/ed25519` v3's sync API, wired to `@noble/hashes`' sha512                                                                                                 |
-| Sign/verify                             | `src/identity/signing.ts`                 | identity.md §4       | `verifyObject` never throws — returns `false` on any malformed input, by design, so it composes as a filter over untrusted data                                        |
-| Tag normalization (flat + hierarchical) | `src/ratings/tags.ts`                     | ratings.md §6.1–§6.2 | See "Spec ambiguities resolved" below — several real judgment calls were needed here                                                                                   |
-| Tag search semantics                    | `src/ratings/tags.ts` (`matchesTagQuery`) | ratings.md §6.3      | Single-component queries match at any depth; multi-component queries match only as a root-anchored prefix — this asymmetry is deliberate and spec-confirmed, not a bug |
-| Content references                      | `src/metadata/content-reference.ts`       | metadata.md §4       | `uri`/`mime_type`/`size`/`hash`/`inline_content`; `inline_content` required iff `uri === 'inline:'`, forbidden otherwise                                               |
-| Post metadata (validate/create)         | `src/metadata/post.ts`                    | metadata.md §3       | Field names match the wire format exactly (snake_case), not idiomatic camelCase — see "Decisions made" below                                                           |
-| Post trust level                        | `src/metadata/post.ts` (`computeTrustLevel`) | metadata.md §6.1  | Caller must supply the actual signer key (Ed25519 signatures don't embed it); verifies before classifying, never trusts the caller's claim blindly                    |
+| Module                                   | File                                         | Spec section         | Notes                                                                                                                                                                  |
+| ---------------------------------------- | -------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| base64url encoding                       | `src/encoding/base64url.ts`                  | identity.md §4.3     | Portable (no `Buffer`); RFC 4648 §5, no padding                                                                                                                        |
+| Base58 (Bitcoin alphabet)                | `src/encoding/base58.ts`                     | identity.md §2       | Alphabet is a literal constant copied from the spec, not trusted from a third-party package                                                                            |
+| JCS canonicalization                     | `src/canonicalization/jcs.ts`                | identity.md §4.2     | Wraps the `canonicalize` npm package (RFC 8785's own editor's implementation) rather than hand-rolling number serialization                                            |
+| Ed25519 keypairs + `nid1` IDs            | `src/identity/keypair.ts`                    | identity.md §2–§3    | Wraps `@noble/ed25519` v3's sync API, wired to `@noble/hashes`' sha512                                                                                                 |
+| Sign/verify                              | `src/identity/signing.ts`                    | identity.md §4       | `verifyObject` never throws — returns `false` on any malformed input, by design, so it composes as a filter over untrusted data                                        |
+| Tag normalization (flat + hierarchical)  | `src/ratings/tags.ts`                        | ratings.md §6.1–§6.2 | See "Spec ambiguities resolved" below — several real judgment calls were needed here                                                                                   |
+| Tag search semantics                     | `src/ratings/tags.ts` (`matchesTagQuery`)    | ratings.md §6.3      | Single-component queries match at any depth; multi-component queries match only as a root-anchored prefix — this asymmetry is deliberate and spec-confirmed, not a bug |
+| Content references                       | `src/metadata/content-reference.ts`          | metadata.md §4       | `uri`/`mime_type`/`size`/`hash`/`inline_content`; `inline_content` required iff `uri === 'inline:'`, forbidden otherwise                                               |
+| Post metadata (validate/create)          | `src/metadata/post.ts`                       | metadata.md §3       | Field names match the wire format exactly (snake_case), not idiomatic camelCase — see "Decisions made" below                                                           |
+| Post trust level                         | `src/metadata/post.ts` (`computeTrustLevel`) | metadata.md §6.1     | Caller must supply the actual signer key (Ed25519 signatures don't embed it); verifies before classifying, never trusts the caller's claim blindly                     |
+| Rating records (validate/create)         | `src/ratings/rating-record.ts`               | ratings.md §2.1      | `ratings` is `Record<string, number>`, open dimension names (§1.2 allows community-defined ones); `supersedes()` implements §2.3's update/retraction rule              |
+| Rating collection wrapper                | `src/ratings/rating-collection.ts`           | ratings.md §7        | `records`/`cached` arrays, each entry validated via rating-record.ts                                                                                                   |
+| Trust graph: affinity + effective scores | `src/ratings/trust-graph.ts`                 | ratings.md §3–§5     | The mathematical core — see its own section below, this is not a "just reads the spec" module                                                                          |
 
 Post metadata scope note: schema validation, creation/signing, and
 trust-level classification are done. **Not** done: canonical version
 history construction (metadata.md §5.2) and cross-version rating
-aggregation (§5.3) — both operate over a *collection* of versions rather
+aggregation (§5.3) — both operate over a _collection_ of versions rather
 than a single object, and conceptually belong alongside the trust graph
 work (item 2 below) rather than here. Also not done: a concrete
 id-minting procedure for brand-new posts — see "Decisions made" below,
@@ -61,26 +71,22 @@ implementation deferral.
 
 Roughly in priority order (matches dependency order):
 
-1. **Rating records** (ratings.md §2) — schema validation, creation,
-   signing (reuses `src/identity/signing.ts` directly, should be close to
-   mechanical).
-2. **Trust graph / affinity computation** (ratings.md §3–§5) — this is
-   the real mathematical core of the protocol: derived vs. direct
-   affinity, decay across hops, confidence, effective affinity via graph
-   traversal, sign inversion (enemy-of-my-enemy), effective post scores,
-   visibility threshold. Substantial, deserves careful test design
-   against hand-computed small-graph examples before trusting it on
-   anything larger. **Also covers**, since it operates over collections
-   the same way: canonical version history construction (metadata.md
-   §5.2) and cross-version rating aggregation (§5.3), deferred from the
-   post-metadata work above for exactly this reason.
-3. **Identity documents** (identity.md §5) — schema, creation, signing,
+1. **Canonical version history construction** (metadata.md §5.2) and
+   **cross-version rating aggregation** (§5.3) — deferred from both the
+   post-metadata work and the trust-graph work above, since it needs
+   both: walking a post's edit history (`previous` chains) and applying
+   §5.3's rules (memory-holed versions, third-party-introduction
+   aggregation via content-hash confirmation, false-claimant exclusion,
+   rater deduplication across versions) to produce one aggregated view,
+   then feeding that into the affinity math already built. The highest-
+   priority remaining gap — everything else below is lower-dependency.
+2. **Identity documents** (identity.md §5) — schema, creation, signing,
    the `recovery_keys`/`recovery_threshold` fields, `aggregate_linked`,
    `proxy`/`operator` fields.
-4. **Key rotation declarations** (identity.md §6) — both the dual-signature
+3. **Key rotation declarations** (identity.md §6) — both the dual-signature
    standard rotation and the recovery-quorum rotation (§6.2's
    `recovery_signatures` threshold verification).
-5. **Channels** (ratings.md §6.4–§6.6) — this is more client-shaped logic
+4. **Channels** (ratings.md §6.4–§6.6) — this is more client-shaped logic
    (local taxonomy, suggestion generation) than pure protocol-object
    validation; worth deciding whether it belongs in this package at all
    or in a future client-facing package, given CONTRIBUTING.md's scope
@@ -91,10 +97,10 @@ Roughly in priority order (matches dependency order):
    logic) probably don't, since they're explicitly non-normative client
    recommendations, not protocol requirements. Revisit when actually
    building this.
-6. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
+5. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
    Mechanical now that post metadata exists (reuses the same patterns —
    `src/metadata/post.ts` is a good template to follow).
-7. **A barrel `src/index.ts`** re-exporting the public API of everything
+6. **A barrel `src/index.ts`** re-exporting the public API of everything
    above, once there's enough of it.
 
 Explicitly **not** planned for this package at all (see CONTRIBUTING.md
@@ -104,6 +110,94 @@ this core is solid. hosting.md's IPNS derivation formula (§5.3's
 protobuf → multihash → CIDv1 steps) is a plausible exception worth
 reconsidering — it's pure computation (no network I/O), so it might
 belong here after all, just lower priority than the list above.
+
+## The trust graph module: what to know before touching it
+
+`src/ratings/trust-graph.ts` is the one module where "just implement what
+the spec says" was not enough — the written spec underdetermines the
+algorithm in several places, and each was resolved by cross-checking
+against ratings.md Appendix B's worked example, whose every number this
+implementation reproduces exactly (see `test/ratings/trust-graph.test.ts`,
+which encodes that example verbatim, including the sign-inverted
+"enemy-of-my-enemy" variant). If you change anything in this file, those
+tests are the ones that must keep passing unmodified.
+
+**1. §4.5's prose formula doesn't literally match its own worked example.**
+The traversal step is written as `import_weight(P) = composite_affinity(U,
+P, D) × decay^H` — but Appendix B's Step 4 computes the hop-2 weight as
+`import_weight(Alice→Bob) × composite_affinity(Bob, Carol) × decay¹`,
+chaining multiplicatively through the previous hop. Read literally, the
+prose formula would be circular for exactly the nodes the traversal exists
+to reach: `composite_affinity(Alice, Carol)` is 0/undefined for a node
+Alice has never rated anything related to, which is the whole point of
+needing indirect traversal. Implemented per the worked example, which is
+unambiguous: each hop's relay weight is the previous hop's accumulated
+contribution into that node, times one additional decay factor. The
+prose formula is best read as a loose gloss. **Consider tightening
+ratings.md §4.5's wording to state the recursive form precisely** — not
+a factual error (the appendix fully disambiguates it), but a documentation
+gap worth closing; not done unilaterally here since it's a spec-prose
+change rather than a correction of something false.
+
+**2. The appendix's "effective_score" steps are really `effective_affinity`
+with the post's author.** Appendix B Steps 5–6 present `effective_score(Alice,
+Z) = 0.10` as if applying §5's post-score formula — but what's actually
+computed there is Alice's effective affinity with Z's _author_, which
+only equals the full §5 post score because the example's posts have no
+tags and Alice never rated them directly (so §5's three-term mean
+degenerates to its single author term). Both facts are pinned by tests
+(`effective_score(Alice, Z) = +0.10` is checked via `effectivePostScore`,
+confirming the equivalence rather than assuming it).
+
+**3. "Rated by U on D" means: D must be explicitly present in the rating
+record's `ratings` map.** §1.2 says an omitted dimension "is treated as
+0," which would suggest every post U ever rated counts toward every
+dimension's mean with an implicit 0 — but §4.3 tracks `confidence`
+_per dimension_, which would be a pointless feature if every dimension's
+count were always identical for a given (U, N). Interpreted instead as an
+explicit-opinion filter: a post U rated only on `good` doesn't dilute U's
+`true`-dimension affinity with an implicit zero. Pinned by a dedicated
+test; revisit only if the spec author says otherwise.
+
+**4. Contributions to an already-visited user must be discarded
+entirely** — not merely excluded from re-propagation. §4.5 step 3 says
+"longer-path encounters are skipped"; an early version of this module
+applied that only to whether a node becomes a _new relay_, still letting
+the redundant longer-path contribution inflate the node's own
+accumulator (Carol's `effective_affinity` came out 0.9 instead of 0.4 in
+a case where she's both a direct hop-1 relation of Alice _and_
+reachable through Bob). Fixed, and pinned by a test asserting Carol's
+own value specifically — notably, the first version of that test only
+checked Dave's downstream value, which happens to be insensitive to the
+bug (Carol's relay weight is fixed at frontier-construction time, before
+the redundant contribution arrives); that was a real test-design lesson:
+**check the value you suspect is wrong, not just a downstream value that
+might hide it.** Tags are exempt from this gating (they're never relay
+sources, so there's no "shortest path to a tag" concept — every path's
+contribution to a tag legitimately accumulates).
+
+**5. The accumulator is keyed by `(nodeType, nodeId)`, not bare `nodeId`.**
+ratings.md §2.1 notes "the same string could in principle identify
+different things" (that's why `item_type` exists on rating records), so a
+node's user-role and tag-role affinities must stay independent
+throughout derived, direct, composite, and effective computation.
+
+**6. Not a bug, worth knowing:** a user's own direct rating of a post
+also counts as a "post relating to its author/tags" for derived-affinity
+purposes, which can loop back and affect that same post's own effective
+score. ratings.md has no carve-out excluding "the post being scored" from
+derived-affinity bookkeeping, and it's arguably correct — rating a post
+genuinely does update your affinity with its author. The "three equal
+terms" test documents this explicitly with a hand-computed expected value
+(0.3, not the naive 0.5) rather than pretending the three terms are
+independent; a second test uses separate posts to isolate them cleanly.
+
+**7. Two redundant `visited.has(...)` guards were removed rather than
+tested.** Coverage flagged them uncovered; analysis showed both are
+provably unreachable (upstream invariants — `compositeAffinitiesOf`'s
+Map-based dedup and an earlier guard in the same loop — already
+guarantee what they checked). Deleting provably-dead code beats
+contriving a test that has to break the invariant to exercise it.
 
 ## Decisions made, and why
 
@@ -156,7 +250,7 @@ belong here after all, just lower priority than the list above.
   deliberate, for a library whose whole purpose is representing the wire
   format precisely.
 - **`createPostMetadata` requires the caller to supply `id`, rather than
-  minting one itself.** metadata.md §2 specifies the *form* a stable
+  minting one itself.** metadata.md §2 specifies the _form_ a stable
   identifier must have but not a procedure for minting a fresh one for a
   brand-new post — unlike a user's identity document (identity.md §5.3,
   deterministic from the user's keypair), there's no spec-given way to
@@ -225,7 +319,7 @@ implication for client implementers (normalize user-entered text to NFC
 at input time if you want that property, since JCS won't do it for you).
 
 **metadata.md Appendices A and B** were both missing the `type` field
-entirely, even though metadata.md §3 lists `type` as a *required* field
+entirely, even though metadata.md §3 lists `type` as a _required_ field
 and Appendices C and D (written in a later session) correctly include
 it. Evidently a leftover from before `type` fields were retrofitted onto
 every neusnet object type across the spec suite — these two appendices
@@ -236,7 +330,7 @@ had a `signature` field in its own example, despite the title. Per §6.1's
 own trust-level table, a post with `author` naming one party and
 `signature` naming a different one is **third-party attested**, not
 unverified/unsigned — the example was actually (correctly) demonstrating
-§6.3's *recommended* bridging pattern ("should be signed by the
+§6.3's _recommended_ bridging pattern ("should be signed by the
 introducer, making it third-party attested"), just mistitled. Renamed to
 "Third-Party-Attested Bridged Post" with a corrected caption; the JSON
 content itself didn't need to change, only Appendix A/B's missing `type`
@@ -254,7 +348,7 @@ This is worth internalizing as a working method for the rest of this
 project, not just a one-off fix: where a test's expected behavior comes
 from this project's own earlier spec-writing rather than from an
 external, independently-verifiable source, be willing to doubt the spec
-text itself — check it against the spec's *own* other stated rules at
+text itself — check it against the spec's _own_ other stated rules at
 minimum, the actual external primary source (an RFC, a standard) where
 one exists — and fix the spec rather than quietly making the test match
 a possibly-wrong assumption. Three for three so far; check the next
