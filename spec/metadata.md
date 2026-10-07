@@ -284,6 +284,7 @@ A top-level post with short inline text, no subject, no tags:
 ```json
 {
   "neusnet_version": 1,
+  "type":        "post",
   "id":        "ipns://k51qzi5uqu5dh6lfh0....",
   "author":    "npub1abc123...",
   "tags":      [],
@@ -306,6 +307,7 @@ A reply post with redundant content references, edit history, summary, and tags:
 ```json
 {
   "neusnet_version": 1,
+  "type":        "post",
   "id":        "ipns://k51qzi5uqu5dh6lfh0....",
   "author":    "npub1abc123...",
   "subject":   "Re: The case for decentralized moderation",
@@ -362,13 +364,14 @@ A post replying jointly to two prior posts by different authors — for example,
 
 This post has two entries in `parents`, one for each post it is directly responding to. Clients traversing the discussion graph should display this post as a reply to both, rather than forcing a choice of a single parent.
 
-## Appendix D: Unsigned Bridged Post
+## Appendix D: Third-Party-Attested Bridged Post
 
-A Bluesky post introduced to neusnet by a third party:
+A Bluesky post introduced to neusnet by a third party, signed by the introducer rather than the original author — per §6.3, this is the preferred form for a bridged post (over a genuinely unsigned one), and per §6.1's trust-level table it is **third-party attested**, not unverified: `author` names the original poster, but `signature` is from a different key (the introducer's):
 
 ```json
 {
   "neusnet_version": 1,
+  "type":        "post",
   "id":        "at://did:plc:abc123.../app.bsky.feed.post/xyz",
   "author":    "at://did:plc:abc123...",
   "subject":   "Interesting thread on trust graphs",
