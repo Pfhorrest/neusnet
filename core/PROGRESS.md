@@ -8,15 +8,15 @@ read this whole file before writing any code — it also records decisions
 you shouldn't need to re-litigate.
 
 **Last updated:** this entry was written during the session that added
-rating records, the rating collection wrapper, and — the big one — the
-full trust graph: derived/direct/composite affinity, confidence, the
-breadth-first effective-affinity traversal, and effective post scores
-(ratings.md §2–§5). This is the mathematical core of the whole protocol;
-everything before it was schema/crypto plumbing in service of this.
+content identity confirmation, canonical version history construction,
+and cross-version rating aggregation (metadata.md §4.3/§5.2/§6.2,
+ratings.md §2.5), wired through to the trust graph — and that revised the
+spec substantially along the way (see "Spec revisions made during the
+version-history work" below).
 
 ## Current state at a glance
 
-- **271 tests, all passing.** `npm test` is green.
+- **366 tests, all passing.** `npm test` is green.
 - **~99.8% statement coverage, ~98% branch coverage, 100%
   functions/lines** across every implemented module — remaining gaps are
   small branch-level edge permutations with real diminishing returns. A
@@ -56,6 +56,9 @@ regressed before doing anything else, if you're resuming this.
 | Rating records (validate/create)         | `src/ratings/rating-record.ts`               | ratings.md §2.1      | `ratings` is `Record<string, number>`, open dimension names (§1.2 allows community-defined ones); `supersedes()` implements §2.3's update/retraction rule              |
 | Rating collection wrapper                | `src/ratings/rating-collection.ts`           | ratings.md §7        | `records`/`cached` arrays, each entry validated via rating-record.ts                                                                                                   |
 | Trust graph: affinity + effective scores | `src/ratings/trust-graph.ts`                 | ratings.md §3–§5     | The mathematical core — see its own section below, this is not a "just reads the spec" module                                                                          |
+| Content identity                         | `src/metadata/content-identity.ts`           | metadata.md §4.3     | Immutable URI / hash / inline-text matching; a mutable URI never confirms identity alone                                                                               |
+| Canonical version history                | `src/metadata/version-history.ts`            | metadata.md §5.2     | Walks `previous`, finds the canonical author, categorizes every other known file; author-signature check is injectable for non-native substrates                       |
+| Cross-version rating aggregation         | `src/ratings/aggregate.ts`                   | ratings.md §2.5      | One rating per rater per post; `buildTrustGraphFromPosts` wires metadata + records into a `TrustGraph`                                                                 |
 
 Post metadata scope note: schema validation, creation/signing, and
 trust-level classification are done. **Not** done: canonical version
@@ -71,22 +74,13 @@ implementation deferral.
 
 Roughly in priority order (matches dependency order):
 
-1. **Canonical version history construction** (metadata.md §5.2) and
-   **cross-version rating aggregation** (§5.3) — deferred from both the
-   post-metadata work and the trust-graph work above, since it needs
-   both: walking a post's edit history (`previous` chains) and applying
-   §5.3's rules (memory-holed versions, third-party-introduction
-   aggregation via content-hash confirmation, false-claimant exclusion,
-   rater deduplication across versions) to produce one aggregated view,
-   then feeding that into the affinity math already built. The highest-
-   priority remaining gap — everything else below is lower-dependency.
-2. **Identity documents** (identity.md §5) — schema, creation, signing,
+1. **Identity documents** (identity.md §5) — schema, creation, signing,
    the `recovery_keys`/`recovery_threshold` fields, `aggregate_linked`,
    `proxy`/`operator` fields.
-3. **Key rotation declarations** (identity.md §6) — both the dual-signature
+2. **Key rotation declarations** (identity.md §6) — both the dual-signature
    standard rotation and the recovery-quorum rotation (§6.2's
    `recovery_signatures` threshold verification).
-4. **Channels** (ratings.md §6.4–§6.6) — this is more client-shaped logic
+3. **Channels** (ratings.md §6.4–§6.6) — this is more client-shaped logic
    (local taxonomy, suggestion generation) than pure protocol-object
    validation; worth deciding whether it belongs in this package at all
    or in a future client-facing package, given CONTRIBUTING.md's scope
@@ -97,10 +91,10 @@ Roughly in priority order (matches dependency order):
    logic) probably don't, since they're explicitly non-normative client
    recommendations, not protocol requirements. Revisit when actually
    building this.
-5. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
+4. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
    Mechanical now that post metadata exists (reuses the same patterns —
    `src/metadata/post.ts` is a good template to follow).
-6. **A barrel `src/index.ts`** re-exporting the public API of everything
+5. **A barrel `src/index.ts`** re-exporting the public API of everything
    above, once there's enough of it.
 
 Explicitly **not** planned for this package at all (see CONTRIBUTING.md
@@ -198,6 +192,99 @@ provably unreachable (upstream invariants — `compositeAffinitiesOf`'s
 Map-based dedup and an earlier guard in the same loop — already
 guarantee what they checked). Deleting provably-dead code beats
 contriving a test that has to break the invariant to exercise it.
+
+## Version history and aggregation: what to know before touching it
+
+`src/metadata/version-history.ts`, `content-identity.ts`, and
+`src/ratings/aggregate.ts` implement metadata.md §4.3/§5.2/§6.2 and
+ratings.md §2.5. As with the trust graph, the written spec underdetermined
+several things; each was settled (and the spec text revised to match — see
+below) rather than silently guessed.
+
+- **Inputs are a `known` map plus a current version id; nothing is
+  fetched.** A version identifier is the content address of a metadata
+  file, so it can't live inside the file; the caller supplies a
+  `Map<versionId, PostMetadata>` and says what the stable id currently
+  resolves to (the hosting layer's job). Dangling `previous` links come
+  back in `missing` so a client knows what to fetch.
+- **Author-signature verification is injectable.** The native check
+  (`nid1` author + Ed25519) is the default; AT Protocol DIDs, Nostr keys
+  etc. need the caller's own `isAuthorSigned`. With only the native check,
+  a non-`nid1` author never produces a canonical chain.
+- **The walk goes _through_ non-author-signed versions** (so a stray copy
+  mid-chain doesn't truncate history) but only through files claiming the
+  same `id`; it stops at unknown files, foreign-id files (whose links are
+  not followed), and cycles. Only author-signed versions by the canonical
+  author join the chain.
+- **No canonical author → the current version is the "anchor"** (the
+  normal bridged-post state). It isn't anomalous; others are categorized
+  against its claimed author, and introductions are confirmed against it.
+  Without this, bridged posts could never be rated at all.
+- **"Unsigned copy" is a fifth category** the original §5.2 table lacked,
+  and **"false claimant" was broadened** to mean any file naming a
+  different author or none, however signed. It describes the claim, not
+  intent. Introductions are confirmed only against _author-signed_
+  versions (or the anchor) — one introduction can't vouch for another
+  (pinned by a test whose fixture matches _only_ another introduction; an
+  earlier draft of that test didn't actually test the property).
+- **A signature doesn't say who signed an introduction**, so history
+  construction can't distinguish a real introduction from a garbage
+  signature; vetting introducers is the caller's job.
+- **Inline content identity is by text, not URI** (all inline refs share
+  the URI `inline:`). Cross-form matching (inline vs. hashed) needs an
+  explicit `hash` on the inline reference. Magnet links match by infohash;
+  hex-vs-base32 infohash spellings are _not_ normalized (documented gap).
+- **Aggregation takes each rater's latest record _whole_** (not
+  per-dimension), treats a retraction as a record (so it can't be undone by
+  resurrecting an older rating of another version), and breaks timestamp
+  ties by version order so results don't depend on arrival order.
+- **A gap found and fixed while writing the spec text:** after
+  cross-version dedupe, a viewer who rated v2 and then the older v1 had
+  only the v1 record left, so `effectivePostScore` for v2 silently lost
+  their own direct rating. Fix: `PostInfo.stableId` groups the versions of
+  one post, and the direct-rating lookup takes the viewer's latest rating
+  across the group. The test uses numbers chosen so the bug changes the
+  result (a first-draft choice would have given the same score either way).
+- **Rating signatures are never checked here** — callers must have
+  verified records (identity.md §4.4) before aggregating. Documented in
+  the module header.
+- **Open question (metadata.md §7.2):** `buildTrustGraphFromPosts` credits
+  whatever `author` a file names, even for unconfirmed third-party
+  attributions, which lets an introducer put words in someone's mouth. The
+  spec now lists this as open; clients can implement a stricter policy
+  because attribution is caller-supplied to the trust graph.
+
+## Spec revisions made during the version-history work
+
+The spec author authorized refining the spec alongside implementation
+("nobody else is even reading this spec yet"). Changes, all in files under
+`spec/`:
+
+- **ratings.md §4.5** rewritten to state the traversal precisely (the
+  recursive import-weight rule, "shortest path only" semantics including
+  same-length convergence, tags exempt) — resolving the prose-vs-example
+  mismatch noted in the trust graph section above.
+- **ratings.md Appendix B** rewritten to go through the real mechanism
+  (affinity first, post score last) with its assumptions (no tags, no
+  direct ratings) stated; Steps renumbered 1–7, and the test labels in
+  `test/ratings/trust-graph.test.ts` match.
+- **ratings.md §2.5** made precise (inclusion rules, no-canonical-history
+  case, whole-record dedupe, retractions, ties); **§5** notes how a
+  viewer's direct rating works across versions; **§7** now requires
+  `records` entries to be the owner's and forbids `public: false` records
+  in either array (and `validateRatingCollection` enforces both); a stale
+  pointer to "README §Client Implementation Recommendations" now points to
+  client-recommendations.md.
+- **metadata.md**: §2 pointed to the wrong section (5.3 vs 5.2) and said
+  ratings are "summed" (they're deduplicated); the `hash` description
+  listed magnet links as mutable, contradicting §4.1 and hosting.md §3.2;
+  new **§4.3 Content Identity**; **§5.2** rewritten (precise algorithm,
+  anchor case, unsigned-copy row, broadened false-claimant, how anomalous
+  files are discovered); **§6.2** clarified; new open question **§7.2**;
+  the intro's reference to a nonexistent "Section 8" fixed.
+- A scripted cross-reference check over all six spec files found one
+  dangling reference (that "Section 8") and now finds none. Worth
+  re-running after any renumbering.
 
 ## Decisions made, and why
 
@@ -355,6 +442,16 @@ a possibly-wrong assumption. Three for three so far; check the next
 appendix example this carefully too, not just the first time.
 
 ## Persistence / resumption notes
+
+**Scratch space can be wiped mid-turn, not just between turns.** It happened
+during the version-history work: only the file created after the reset
+survived; every new file from earlier in the same turn was gone. Outputs
+(including spec files edited directly there) survived. What worked:
+`cp -r /mnt/user-data/outputs/neusnet-core/. /home/claude/neusnet-core/`
+(note the `/.` — it includes dotfiles), `npm install`, confirm the last
+synced test count, then re-create what was lost. **So: sync to outputs
+after finishing each module, not once at the end of a turn.** Edit spec
+files in outputs directly, as has been the practice.
 
 This package is developed in container scratch space
 (`/home/claude/neusnet-core/`) and synced to
