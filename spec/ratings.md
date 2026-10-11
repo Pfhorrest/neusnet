@@ -107,14 +107,19 @@ Self-ratings are fully overridable. An author who wishes to disavow a previous p
 
 ### 2.5 Rating Aggregation Across Versions
 
-Because rating records reference version identifiers rather than stable post identifiers (see metadata.md §2), computing an aggregate score for a post requires collecting ratings across all relevant versions. The procedure is:
+Because rating records reference version identifiers rather than stable post identifiers (see metadata.md §2), computing an aggregate for a post requires collecting ratings across its relevant versions. The procedure is:
 
-1. Build the canonical version history for the post's stable `id` (see metadata.md §5.2).
-2. Collect all rating records whose `item` field matches any version identifier in the canonical history, plus any memory-holed versions (whose ratings count against the author per metadata.md §5.2).
-3. Collect ratings from any third-party introductions of the same content, where content identity is confirmed via matching immutable content URIs or hash fields (see metadata.md §6.2). These are included in the aggregate.
-4. Exclude ratings whose `item` field matches a false claimant version (different author signed as themselves).
-5. **Deduplicate by rater**: for each rater, retain only their most recent rating record across all collected versions (by timestamp). This prevents score inflation from a rater re-rating multiple versions of the same post, and prevents authors from self-boosting by publishing many near-identical versions each carrying a self-rating of +1.
-6. Apply the trust graph algorithm (Sections 4–5) to the deduplicated rating set.
+1. Build the canonical version history for the post's stable `id`, and categorize the other metadata files that claim it (metadata.md §5.2).
+2. Collect all rating records whose `item` is a version in the canonical history, and those whose `item` is a memory-holed version. Ratings of a memory-holed version still count: an author cannot erase the response to their own words by skipping a version.
+3. Collect ratings of third-party introductions and unsigned copies that name the claimed author, but only where content identity is confirmed (metadata.md §4.3) against an author-signed version. Introductions are confirmed against author-signed versions only — never against one another. A post with no author-signed version at all (a bridged post whose author has not joined neusnet) has no canonical history; its current version, the *anchor*, stands in for it: the anchor's own ratings are collected, and introductions are confirmed against it.
+4. Exclude ratings whose `item` is a false-claimant version. A false claimant's version remains a post in its own right — ratings of it build affinity with *its* named author, not the canonical author — it is only kept out of this post's aggregate.
+5. **Deduplicate by rater**: for each rater, retain only their most recent rating record across all collected versions (by timestamp). This prevents score inflation from a rater re-rating multiple versions of the same post, and prevents authors from self-boosting by publishing many near-identical versions each carrying a self-rating of +1. Implementations must agree on three details:
+   - Records are taken whole: a later record replaces an earlier one entirely, not dimension by dimension (consistent with §2.3).
+   - A retraction (an empty `ratings` map) is a record like any other. A rater whose most recent record is a retraction has withdrawn their rating, and their earlier ratings of *other* versions are not resurrected.
+   - If one rater has two records with the same timestamp, the one for the version earlier in this order wins: canonical versions (newest first), then memory-holed versions, then confirmed introductions and unsigned copies. This keeps the result independent of the order in which records happen to arrive.
+6. Apply the trust graph algorithm (Sections 4–5) to the deduplicated rating set. In particular, a rater contributes to the derived affinity (§4.2) of the post's author and tags once per post rather than once per version, and a viewer's own most recent rating of any version of the post serves as their direct rating of the post (§5).
+
+This procedure assumes every rating record it is given has already been validated and its signature verified (identity.md §4.4). Ratings of versions that are not part of the post, and records that are not ratings of posts, are simply not collected.
 
 The default feed view shows the current version with the aggregate score. Clients should additionally:
 - Provide per-version score breakdowns in the version history view.
@@ -207,16 +212,40 @@ At cold start, when U has rated nothing, all effective affinities are 0 and all 
 
 U's **effective affinity** with any node N incorporates not only U's own composite affinity but also the composite affinities of peers at greater graph distances, decayed by distance.
 
-Effective affinity is computed by a **breadth-first traversal** of the trust graph outward from U:
+It is computed by a **breadth-first traversal** of the trust graph outward from U, keeping a running total (an *accumulator*) for each node reached. When the traversal finishes, the accumulator for node N *is* `effective_affinity(U, N, D)`. Every accumulator starts at 0, which is also the result for any node the traversal never reaches (§4.4).
 
-1. **Hop 0**: U's own composite affinity with each directly-related node contributes at weight 1.
-2. **Hop H** (H = 1, 2, 3, ...):
-   - For each peer P whose shortest path from U is H hops:
-     - Retrieve P's public rating collection (or a cached copy from a proximal peer).
-     - Compute the **import weight** for P: `composite_affinity(U, P, D) × decay^H`
-     - For each node N in P's rating collection: add `import_weight(P) × composite_affinity(P, N, D)` to the accumulator for N.
-3. Each node is visited **at most once**. When a node would be reached via multiple paths, only the shortest path counts; longer-path encounters are skipped.
-4. Traversal continues until the compute/bandwidth budget is exhausted or the full reachable graph is visited.
+A **peer** is a user who has published a rating collection — someone there is something to import from. Users who have never published ratings can still receive affinity (they appear in accumulators), but they cannot relay it onward.
+
+**Hop 0 — U's own view.** For every node N, user or tag, with non-zero `composite_affinity(U, N, D)`, add that value to N's accumulator. This includes U's own private ratings (§2.1, `public`), which only U ever sees. U itself is hop 0.
+
+**Hop 1 peers.** Every peer P ≠ U with non-zero `composite_affinity(U, P, D)` is a hop-1 peer, with
+
+```
+import_weight(P) = composite_affinity(U, P, D) × decay
+```
+
+**Hop H (H = 1, 2, 3, ...).** For each hop-H peer P — retrieving P's public rating collection, or a cached copy from a proximal peer — and each node N for which `composite_affinity(P, N, D)` is non-zero:
+
+- If N is a user who has already been assigned a hop number ≤ H (including U), **skip** this encounter entirely (see "Shortest path only" below).
+- Otherwise, add `import_weight(P) × composite_affinity(P, N, D)` to N's accumulator. Call this amount P's *contribution* to N.
+
+Once every hop-H peer has been processed, each user Q newly reached during that hop who is a peer becomes a **hop-(H+1) peer**, with
+
+```
+import_weight(Q) = decay × (the sum of all contributions into Q during hop H)
+```
+
+Traversal continues until no new peers remain, or until the client's compute/bandwidth budget is exhausted — in which case the accumulators reflect the hops completed so far.
+
+In words: a peer's import weight is the signal that arrived at that peer, attenuated by one more step of decay. Unrolled along a single path U → P₁ → P₂ → … → P_H, it is the product of the composite affinities along each link times `decay^H`:
+
+```
+import_weight(P_H) = composite_affinity(U, P₁) × composite_affinity(P₁, P₂) × … × composite_affinity(P_{H-1}, P_H) × decay^H
+```
+
+Note that this is *not* `composite_affinity(U, P_H, D) × decay^H`: U may have no direct affinity with a distant peer at all (reaching such peers is what the traversal is for), and a peer's influence on U is mediated by the chain of affinities through which U reaches them. Appendix B works through an example.
+
+**Shortest path only.** Each user is assigned the hop number of the shortest path by which it is first reached, and keeps that number. A later encounter with a user who already has a hop number ≤ the current hop — a longer path, or an equal-or-shorter one that was already resolved — is discarded entirely: it adds nothing to that user's accumulator and does not affect its import weight. If a user is first reached by several paths of the *same* minimal length (that is, from several peers in the same hop), all of those contributions are summed. Tags are never peers and are never assigned a hop number, so every path's contribution to a tag's accumulator counts.
 
 The **decay factor** is user-controlled in [0, 1], configurable per dimension. Suggested default: `0.5`.
 
@@ -252,6 +281,8 @@ if len(tag_affinities) > 0:
 
 effective_score(U, P, D) = mean(terms)   // 0 if terms is empty
 ```
+
+For a post with several versions (§2.5), `direct_rating(U, P, D)` is U's most recent rating of any version of P that is counted in the aggregate.
 
 A post tagged #funny, #cat, and #cute where U has affinity +1 for #funny, +1 for #cute, and −0.5 for #cat produces a single tag term of mean(+1, +1, −0.5) = +0.5, which then averages with the author affinity and direct rating on equal footing. A post with fifty tags is not dominated by its tag signals any more than a post with two tags.
 
@@ -406,9 +437,9 @@ A rating record collection is a JSON object:
 }
 ```
 
-**`records`** — the owner's own public rating records, in ascending timestamp order.
+**`records`** — the owner's own public rating records, in ascending timestamp order. Every entry's `rater` must equal `owner`.
 
-**`cached`** — cached copies of rating records retrieved from the owner's peers, included to enable fast approximate graph traversal. Each cached record retains its original signature so recipients can verify authenticity and later cross-check against the original source. See README §Client Implementation Recommendations for the rationale.
+**`cached`** — cached copies of rating records retrieved from the owner's peers, included to enable fast approximate graph traversal. Each cached record retains its original signature so recipients can verify authenticity and later cross-check against the original source. Neither array may contain a record with `public: false`: private ratings are never transmitted (§2.1). See client-recommendations.md §Cached Rating Distribution for the rationale.
 
 ---
 
@@ -448,7 +479,9 @@ Alice, Bob, Carol, and Dave are users. `decay = 0.5` throughout. All calculation
 - Alice rated Bob's post Y: True −0.5
 - Bob rated Carol's post Z: True +0.8
 - Carol rated Dave's post W: True −1.0
-- No other ratings exist.
+- No other ratings exist. In particular, none of the posts X, Y, Z, W carries tags, Alice has not rated Z or W herself, and Dave has published no ratings.
+
+The steps below follow the traversal of §4.5: Alice's own view first, then outward one hop at a time, accumulating effective affinities; the effective scores of Z and W then follow from §5.
 
 ---
 
@@ -460,16 +493,16 @@ Alice has rated two of Bob's posts: +1 and −0.5.
 derived_affinity(Alice, Bob) = mean(+1, −0.5) = +0.25
 ```
 
-No direct rating of Bob exists, so `composite_affinity(Alice, Bob) = +0.25`.
+No direct rating of Bob exists, so `composite_affinity(Alice, Bob) = +0.25`. Bob is Alice's only hop-0 relation, so `effective_affinity(Alice, Bob)` starts at +0.25.
 
 ---
 
-**Step 2: Alice's import weight for Bob's ratings of others (hop 1).**
+**Step 2: Bob's import weight (hop 1).**
 
 ```
-import_weight(Alice → Bob) = composite_affinity(Alice, Bob) × decay¹
-                           = 0.25 × 0.5
-                           = +0.125
+import_weight(Bob) = composite_affinity(Alice, Bob) × decay
+                   = 0.25 × 0.5
+                   = +0.125
 ```
 
 ---
@@ -479,49 +512,68 @@ import_weight(Alice → Bob) = composite_affinity(Alice, Bob) × decay¹
 Bob has rated one of Carol's posts at +0.8.
 
 ```
-derived_affinity(Bob, Carol) = +0.8
+derived_affinity(Bob, Carol)   = +0.8
 composite_affinity(Bob, Carol) = +0.8
 ```
 
 ---
 
-**Step 4: Alice's import weight for Carol's ratings of others (hop 2).**
+**Step 4: Alice's effective affinity with Carol.**
 
-Carol is two hops from Alice, reached through Bob. Her import weight chains through Bob's affinity for her and an additional decay:
-
-```
-import_weight(Alice → Bob → Carol) = import_weight(Alice → Bob) × composite_affinity(Bob, Carol) × decay¹
-                                   = 0.125 × 0.8 × 0.5
-                                   = +0.05
-```
-
----
-
-**Step 5: Effective score of Carol's post Z for Alice.**
-
-Bob rated Z at +0.8. Alice's import weight for Bob's ratings is +0.125.
+Alice has no ratings relating to Carol, so everything she knows about Carol comes through Bob. Bob's contribution:
 
 ```
-effective_score(Alice, Z) = import_weight(Alice → Bob) × rating(Bob, Z)
+contribution(Bob → Carol) = import_weight(Bob) × composite_affinity(Bob, Carol)
                           = 0.125 × 0.8
                           = +0.10
-```
 
-Z scores +0.10 for Alice — positive but modest, being two hops away through a moderate-affinity chain.
+effective_affinity(Alice, Carol) = +0.10
+```
 
 ---
 
-**Step 6: Effective score of Dave's post W for Alice.**
+**Step 5: Carol's import weight (hop 2).**
 
-Carol rated W at −1.0. Alice's import weight for Carol's ratings is +0.05.
+Carol is reached through Bob, so her import weight is the signal that arrived at her, attenuated by one more decay step:
 
 ```
-effective_score(Alice, W) = import_weight(Alice → Bob → Carol) × rating(Carol, W)
-                          = 0.05 × (−1.0)
-                          = −0.05
+import_weight(Carol) = decay × contribution(Bob → Carol)
+                     = 0.5 × 0.10
+                     = +0.05
 ```
 
-W scores −0.05 for Alice — slightly below the default threshold of 0, so it would not appear in her default feed. She can still retrieve it directly if she chooses.
+This is the same as the unrolled chain `composite_affinity(Alice, Bob) × composite_affinity(Bob, Carol) × decay² = 0.25 × 0.8 × 0.25`.
+
+---
+
+**Step 6: Alice's effective affinity with Dave.**
+
+Carol has rated one of Dave's posts at −1.0, so `composite_affinity(Carol, Dave) = −1.0`.
+
+```
+contribution(Carol → Dave) = import_weight(Carol) × composite_affinity(Carol, Dave)
+                           = 0.05 × (−1.0)
+                           = −0.05
+
+effective_affinity(Alice, Dave) = −0.05
+```
+
+Dave has published no ratings, so he is not a peer and the traversal ends here.
+
+---
+
+**Step 7: Effective scores of Z and W.**
+
+By §5, a post's effective score is the mean of the terms that apply to it. Neither Z nor W has tags, and Alice has not rated either herself, so the only term for each is the effective affinity with its author:
+
+```
+effective_score(Alice, Z) = effective_affinity(Alice, Carol) = +0.10
+effective_score(Alice, W) = effective_affinity(Alice, Dave)  = −0.05
+```
+
+Z scores +0.10 for Alice — positive but modest, reflecting an endorsement filtered through one moderate-affinity link. W scores −0.05 — slightly below the default threshold of 0, so it would not appear in her default feed. She can still retrieve it directly if she chooses.
+
+Note that Bob's rating of Z does not reach Alice as a rating of *Z*; it reaches her as Bob's *affinity with Carol*, which then colors every post Carol writes. Here Z happens to be the only post Bob rated, so the two coincide.
 
 ---
 
@@ -531,19 +583,22 @@ Suppose instead Alice had rated Bob's posts negatively: mean −0.25.
 
 ```
 composite_affinity(Alice, Bob) = −0.25
-import_weight(Alice → Bob)     = −0.25 × 0.5 = −0.125
+import_weight(Bob)             = −0.25 × 0.5 = −0.125
 ```
 
-Bob rated Z at +0.8:
-```
-effective_score(Alice, Z) = −0.125 × 0.8 = −0.10
-```
-Bob's endorsement of Z is now a negative signal for Alice.
+Bob's affinity with Carol is still +0.8, so Bob's contribution to Carol is now negative:
 
-And for W, chained through Carol:
 ```
-import_weight(Alice → Bob → Carol) = −0.125 × 0.8 × 0.5 = −0.05
-effective_score(Alice, W)          = −0.05 × (−1.0) = +0.05
+effective_affinity(Alice, Carol) = −0.125 × 0.8 = −0.10
+effective_score(Alice, Z)        = −0.10
 ```
 
-Carol's condemnation of W, filtered through Alice's distrust of Bob who trusts Carol, becomes a mild positive signal. No special logic required — the signed arithmetic handles it automatically.
+Bob's endorsement of Carol is now a negative signal for Alice. Further down the chain:
+
+```
+import_weight(Carol)             = 0.5 × (−0.10)    = −0.05
+effective_affinity(Alice, Dave)  = −0.05 × (−1.0)   = +0.05
+effective_score(Alice, W)        = +0.05
+```
+
+Carol's condemnation of Dave, filtered through Alice's distrust of Bob who trusts Carol, becomes a mild positive signal. No special logic is required — the signed arithmetic handles it automatically.

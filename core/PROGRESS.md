@@ -16,7 +16,7 @@ version-history work" below).
 
 ## Current state at a glance
 
-- **366 tests, all passing.** `npm test` is green.
+- **415 tests, all passing.** `npm test` is green.
 - **~99.8% statement coverage, ~98% branch coverage, 100%
   functions/lines** across every implemented module — remaining gaps are
   small branch-level edge permutations with real diminishing returns. A
@@ -31,9 +31,8 @@ lint`, strict type-aware ESLint rules), **format clean** (`npm run
 format:check`).
 - **Build works** (`npm run build` emits `dist/` with `.js` + `.d.ts` +
   source maps for every module).
-- No barrel `src/index.ts` yet — intentionally deferred until there's
-  enough surface area for one to be worth having rather than just
-  re-exporting a handful of modules (see "Next up" below).
+- **README examples are executed.** `test/readme-examples.test.ts`
+  mirrors the code samples in `README.md`; change one, change the other.
 
 Run `npm test && npm run typecheck && npm run lint && npm run
 format:check && npm run build` as a single sanity check that nothing has
@@ -59,6 +58,7 @@ regressed before doing anything else, if you're resuming this.
 | Content identity                         | `src/metadata/content-identity.ts`           | metadata.md §4.3     | Immutable URI / hash / inline-text matching; a mutable URI never confirms identity alone                                                                               |
 | Canonical version history                | `src/metadata/version-history.ts`            | metadata.md §5.2     | Walks `previous`, finds the canonical author, categorizes every other known file; author-signature check is injectable for non-native substrates                       |
 | Cross-version rating aggregation         | `src/ratings/aggregate.ts`                   | ratings.md §2.5      | One rating per rater per post; `buildTrustGraphFromPosts` wires metadata + records into a `TrustGraph`                                                                 |
+| Package entry point                      | `src/index.ts`                               | —                    | Re-exports the public API; `test/index.test.ts` pins the export surface, and the built `dist/` was verified importable in plain Node                                   |
 
 Post metadata scope note: schema validation, creation/signing, and
 trust-level classification are done. **Not** done: canonical version
@@ -87,15 +87,13 @@ Roughly in priority order (matches dependency order):
    note that this package is protocol-object logic, not client behavior.
    Leaning toward: the _data structure_ (a channel's root tag + local
    taxonomy as a plain object) belongs here; the _suggestion-generation
-   heuristics_ (client-recommendations.md §6.5's parent/child suggestion
+   heuristics_ (ratings.md §6.5's cross-hierarchy suggestion
    logic) probably don't, since they're explicitly non-normative client
    recommendations, not protocol requirements. Revisit when actually
    building this.
 4. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
    Mechanical now that post metadata exists (reuses the same patterns —
    `src/metadata/post.ts` is a good template to follow).
-5. **A barrel `src/index.ts`** re-exporting the public API of everything
-   above, once there's enough of it.
 
 Explicitly **not** planned for this package at all (see CONTRIBUTING.md
 "Scope"): anything involving actual IPFS/IPNS network calls, hosting,
@@ -326,6 +324,12 @@ The spec author authorized refining the spec alongside implementation
   `@typescript-eslint/no-non-null-assertion` is explicitly turned off in
   `eslint.config.js` for exactly this reason (see the comment there);
   don't re-enable it without reworking those call sites.
+- **The README's code samples are tests.** Documentation for newcomers
+  is only useful if it works, and the first draft of this README told
+  readers to import from paths (`neusnet-core/identity/keypair`) that the
+  package's `exports` map doesn't expose — and there was no `src/index.ts`
+  at all, so the package entry point was broken. Both fixed; the samples
+  are now run by `test/readme-examples.test.ts`.
 - **Wire-format field names (snake_case) used directly in TypeScript
   types, not translated to camelCase.** `ContentReference.mime_type`,
   not `mimeType`. Every spec document uses snake_case for every JSON
@@ -452,6 +456,16 @@ survived; every new file from earlier in the same turn was gone. Outputs
 synced test count, then re-create what was lost. **So: sync to outputs
 after finishing each module, not once at the end of a turn.** Edit spec
 files in outputs directly, as has been the practice.
+
+**How to sync (and how not to):** use
+`tar -C /home/claude/neusnet-core --exclude=node_modules --exclude=dist --exclude=coverage -cf - . | tar -C /mnt/user-data/outputs/neusnet-core -xf -`.
+`rsync` isn't installed, and `cp -r . dest && rm -rf dest/node_modules` is
+a trap: `cp` fails on the symlinks in `node_modules/.bin`, so the `&&`
+short-circuits and the cleanup never runs — the copy and the archive end
+up containing a partial `node_modules`, and a "clean-room" run from that
+archive isn't clean. Check the file count (~45 files, ~95 KB archive) and
+that the extracted archive has no `node_modules` before trusting a
+verification.
 
 This package is developed in container scratch space
 (`/home/claude/neusnet-core/`) and synced to

@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildTrustGraph,
+  buildTrustGraphFromPosts,
+  buildVersionHistory,
+  computeTrustLevel,
   createPostMetadata,
   createRatingRecord,
+  derivedAffinity,
   effectivePostScore,
   encodeNid1,
   generateKeypair,
   normalizeTag,
   signObject,
+  validatePostMetadata,
   verifyObject,
+  type RatingRecord,
 } from '../src/index.js';
 
 // These mirror the code samples in README.md, so the documentation can't
@@ -48,6 +54,9 @@ describe('README examples', () => {
       bob.secretKey,
     );
 
+    expect(() => validatePostMetadata(post)).not.toThrow();
+    expect(computeTrustLevel(post, bob.publicKey)).toBe('author-verified');
+
     // Alice rates it. `item` is the post's *version* identifier — in a real
     // deployment, the content address of the metadata file.
     const versionId = 'ipfs://bafy-example-version-1';
@@ -71,5 +80,58 @@ describe('README examples', () => {
 
     // How does the post look to Alice?
     expect(effectivePostScore(graph, aliceId, versionId, { dimension: 'true' })).toBe(1);
+  });
+  it('versions and aggregation', () => {
+    const bob = generateKeypair();
+    const carol = generateKeypair();
+    const bobId = encodeNid1(bob.publicKey);
+    const carolId = encodeNid1(carol.publicKey);
+    const postId = 'ipns://k51-example-post';
+
+    // Bob publishes a post, then an edit of it (whose `previous` names v1).
+    const v1 = createPostMetadata(
+      { id: postId, author: bobId, content: [{ uri: 'ipfs://content-1' }], timestamp: 1 },
+      bob.secretKey,
+    );
+    const v2 = createPostMetadata(
+      {
+        id: postId,
+        author: bobId,
+        content: [{ uri: 'ipfs://content-2' }],
+        previous: 'ipfs://v1',
+        timestamp: 2,
+      },
+      bob.secretKey,
+    );
+    const known = new Map([
+      ['ipfs://v1', v1],
+      ['ipfs://v2', v2],
+    ]);
+
+    const history = buildVersionHistory({ id: postId, currentVersionId: 'ipfs://v2', known });
+    expect(history.canonical).toEqual(['ipfs://v2', 'ipfs://v1']);
+
+    // Carol rated both versions, changing her mind.
+    const rate = (item: string, value: number, timestamp: number): RatingRecord =>
+      createRatingRecord(
+        {
+          rater: carolId,
+          item,
+          item_type: 'post',
+          ratings: { true: value },
+          timestamp,
+          public: true,
+        },
+        carol.secretKey,
+      );
+    const records = [rate('ipfs://v1', 1, 10), rate('ipfs://v2', -1, 20)];
+
+    // Her latest opinion counts once, not once per version.
+    const graph = buildTrustGraphFromPosts({
+      known,
+      currentVersions: new Map([[postId, 'ipfs://v2']]),
+      records,
+    });
+    expect(derivedAffinity(graph, carolId, bobId, 'user', { dimension: 'true' })).toBe(-1);
   });
 });

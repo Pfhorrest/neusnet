@@ -45,7 +45,10 @@ describe('contentReferencesMatch — immutable URIs', () => {
 
   it('does not match magnet links with different infohashes', () => {
     expect(
-      contentReferencesMatch({ uri: 'magnet:?xt=urn:btih:aaaa' }, { uri: 'magnet:?xt=urn:btih:bbbb' }),
+      contentReferencesMatch(
+        { uri: 'magnet:?xt=urn:btih:aaaa' },
+        { uri: 'magnet:?xt=urn:btih:bbbb' },
+      ),
     ).toBe(false);
   });
 
@@ -119,7 +122,10 @@ describe('contentReferencesMatch — hash fields', () => {
 
   it('does not match when only one side has a hash', () => {
     expect(
-      contentReferencesMatch({ uri: 'https://a.example/x', hash: SHA }, { uri: 'https://b.example/y' }),
+      contentReferencesMatch(
+        { uri: 'https://a.example/x', hash: SHA },
+        { uri: 'https://b.example/y' },
+      ),
     ).toBe(false);
   });
 });
@@ -170,9 +176,9 @@ describe('contentIdentityMatches', () => {
   });
 
   it('does not match when no reference matches', () => {
-    expect(contentIdentityMatches(post([{ uri: 'ipfs://bafyA' }]), post([{ uri: 'ipfs://bafyB' }]))).toBe(
-      false,
-    );
+    expect(
+      contentIdentityMatches(post([{ uri: 'ipfs://bafyA' }]), post([{ uri: 'ipfs://bafyB' }])),
+    ).toBe(false);
   });
 
   it('is symmetric', () => {

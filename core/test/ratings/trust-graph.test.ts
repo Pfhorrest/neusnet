@@ -81,19 +81,19 @@ describe('Appendix B worked example — base case', () => {
     expect(compositeAffinity(graph, 'Bob', 'Carol', 'user', opts)).toBeCloseTo(0.8, 10);
   });
 
-  it('Step 5: effective_affinity(Alice, Carol) = +0.10 (via Bob, hop 1)', () => {
+  it('Step 4: effective_affinity(Alice, Carol) = +0.10 (Bob\u2019s contribution: 0.125 \u00d7 0.8)', () => {
     expect(effectiveAffinity(graph, 'Alice', 'Carol', 'user', opts)).toBeCloseTo(0.1, 10);
   });
 
-  it('Step 5: effective_score(Alice, Z) = +0.10 (Z has no tags, Alice never rated Z directly, so this equals effective_affinity with its author Carol exactly)', () => {
+  it('Step 7: effective_score(Alice, Z) = +0.10 (Z has no tags and Alice never rated it directly, so by \u00a75 its score is exactly the effective affinity with its author Carol)', () => {
     expect(effectivePostScore(graph, 'Alice', 'post:Z', opts)).toBeCloseTo(0.1, 10);
   });
 
-  it('Step 6: effective_affinity(Alice, Dave) = -0.05 (via Bob -> Carol, hop 2)', () => {
+  it('Step 6: effective_affinity(Alice, Dave) = -0.05 (Carol\u2019s contribution: import_weight 0.05 \u00d7 -1.0)', () => {
     expect(effectiveAffinity(graph, 'Alice', 'Dave', 'user', opts)).toBeCloseTo(-0.05, 10);
   });
 
-  it('Step 6: effective_score(Alice, W) = -0.05', () => {
+  it('Step 7: effective_score(Alice, W) = -0.05', () => {
     expect(effectivePostScore(graph, 'Alice', 'post:W', opts)).toBeCloseTo(-0.05, 10);
   });
 
@@ -553,6 +553,53 @@ describe('effectivePostScore', () => {
     // Both: mean(author=-1, tagMean=1) = 0, regardless of 2 vs 50 tags.
     expect(effectivePostScore(graphMany, 'U', 'post:many', opts)).toBeCloseTo(0, 10);
     expect(effectivePostScore(graphTwo, 'U', 'post:two', opts)).toBeCloseTo(0, 10);
+  });
+});
+
+describe('effectivePostScore — versions of one post (PostInfo.stableId)', () => {
+  const opts = { dimension: 'true' };
+  const posts = new Map<string, PostInfo>([
+    ['v1', { author: 'Author', tags: [], stableId: 'post' }],
+    ['v2', { author: 'Author', tags: [], stableId: 'post' }],
+    ['standalone', { author: 'Author', tags: [] }],
+  ]);
+
+  it("counts the viewer's rating of a sibling version as their direct rating of this one", () => {
+    const graph = buildTrustGraph({
+      records: [
+        rating('U', 'v1', 'post', { true: 0.5 }),
+        rating('U', 'Author', 'user', { true: -0.5 }),
+      ],
+      posts,
+    });
+    // composite_affinity(U, Author) = (2 * 0.5 + 1 * -0.5) / 3 = 1/6
+    // terms for v2: direct (via sibling v1) = 0.5, author = 1/6
+    expect(effectivePostScore(graph, 'U', 'v2', opts)).toBeCloseTo((0.5 + 1 / 6) / 2, 10);
+  });
+
+  it("uses the viewer's most recent rating among all versions, even one for another version", () => {
+    const graph = buildTrustGraph({
+      records: [
+        rating('U', 'v1', 'post', { true: 0.9 }, 1),
+        rating('U', 'v2', 'post', { true: -0.3 }, 2),
+      ],
+      posts,
+    });
+    // derived affinity with Author = mean(0.9, -0.3) = 0.3
+    // v1's direct term is the NEWER rating, of v2: -0.3  =>  mean(-0.3, 0.3) = 0
+    expect(effectivePostScore(graph, 'U', 'v1', opts)).toBeCloseTo(0, 10);
+  });
+
+  it('does not treat a version without a stableId as part of the group', () => {
+    const graph = buildTrustGraph({
+      records: [
+        rating('U', 'v1', 'post', { true: 0.5 }),
+        rating('U', 'Author', 'user', { true: -0.5 }),
+      ],
+      posts,
+    });
+    // No sibling rating applies to 'standalone', so only the author term remains.
+    expect(effectivePostScore(graph, 'U', 'standalone', opts)).toBeCloseTo(1 / 6, 10);
   });
 });
 

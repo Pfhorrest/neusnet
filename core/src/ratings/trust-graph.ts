@@ -11,6 +11,14 @@ export type NodeType = 'user' | 'tag';
 export interface PostInfo {
   author?: string;
   tags: string[];
+  /**
+   * The stable identifier of the post this version belongs to, set when the
+   * version is part of a cross-version aggregate (ratings.md §2.5).
+   * Versions sharing a `stableId` are one post: a rater's most recent
+   * rating of *any* of them is their rating of the post. Absent, a version
+   * stands alone.
+   */
+  stableId?: string;
 }
 
 interface TrustGraphInternal {
@@ -383,8 +391,21 @@ export function effectivePostScore(
   const accumulator = runTraversal(graph, U, opts);
   const terms: number[] = [];
 
-  const directRecords = graph.recordsByRater.get(U) ?? [];
-  const directRecord = directRecords.find((r) => r.item_type === 'post' && r.item === postId);
+  // U's own rating of the post: for a version that belongs to an aggregated
+  // post, that is U's most recent rating across all of its versions, not
+  // just the one being scored.
+  const stableId = info?.stableId;
+  const directRecord = (graph.recordsByRater.get(U) ?? [])
+    .filter(
+      (r) =>
+        r.item_type === 'post' &&
+        (r.item === postId ||
+          (stableId !== undefined && graph.posts.get(r.item)?.stableId === stableId)),
+    )
+    .reduce<RatingRecord | undefined>(
+      (latest, r) => (latest === undefined || r.timestamp > latest.timestamp ? r : latest),
+      undefined,
+    );
   const directRating = directRecord?.ratings[opts.dimension];
   if (directRating !== undefined && directRating !== 0) {
     terms.push(directRating);

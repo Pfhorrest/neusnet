@@ -6,7 +6,12 @@ import {
   type VersionHistory,
 } from '../metadata/version-history.js';
 import type { RatingRecord } from './rating-record.js';
-import { buildTrustGraph, resolveLatestRatings, type PostInfo, type TrustGraph } from './trust-graph.js';
+import {
+  buildTrustGraph,
+  resolveLatestRatings,
+  type PostInfo,
+  type TrustGraph,
+} from './trust-graph.js';
 
 /**
  * Rating aggregation across the versions of a post (ratings.md §2.5).
@@ -58,7 +63,9 @@ export interface AggregatedPostRatings {
 }
 
 function byTimestampThenRater(a: RatingRecord, b: RatingRecord): number {
-  return a.timestamp - b.timestamp || (a.rater < b.rater ? -1 : a.rater > b.rater ? 1 : 0);
+  // Raters are unique within every list this sorts (one record per rater,
+  // or per rater per version), so the final comparison never ties.
+  return a.timestamp - b.timestamp || (a.rater < b.rater ? -1 : 1);
 }
 
 /**
@@ -97,6 +104,8 @@ export function aggregatePostRatings(input: AggregatePostRatingsInput): Aggregat
 
   const order = new Map(included.map((versionId, index) => [versionId, index]));
   const collected = records.filter((r) => r.item_type === 'post' && order.has(r.item));
+  // Safe: `collected` holds only records whose item is a key of `order`.
+  const rank = (item: string): number => order.get(item)!;
 
   // Most recent record per rater across every included version. A tie on
   // timestamp goes to the version earlier in the priority order, so the
@@ -107,8 +116,7 @@ export function aggregatePostRatings(input: AggregatePostRatingsInput): Aggregat
     const beatsBest =
       best === undefined ||
       record.timestamp > best.timestamp ||
-      (record.timestamp === best.timestamp &&
-        (order.get(record.item) ?? Infinity) < (order.get(best.item) ?? Infinity));
+      (record.timestamp === best.timestamp && rank(record.item) < rank(best.item));
     if (beatsBest) retained.set(record.rater, record);
   }
 
@@ -161,6 +169,7 @@ export interface BuildTrustGraphFromPostsInput {
  */
 export function buildTrustGraphFromPosts(input: BuildTrustGraphFromPostsInput): TrustGraph {
   const superseded = new Set<RatingRecord>();
+  const stableIds = new Map<string, string>(); // version identifier -> stable id, for included versions
   for (const [id, currentVersionId] of input.currentVersions) {
     const history = buildVersionHistory({
       id,
@@ -174,13 +183,16 @@ export function buildTrustGraphFromPosts(input: BuildTrustGraphFromPostsInput): 
       records: input.records,
     });
     for (const record of aggregated.superseded) superseded.add(record);
+    for (const versionId of aggregated.includedVersionIds) stableIds.set(versionId, id);
   }
 
   const posts = new Map<string, PostInfo>();
   for (const [versionId, post] of input.known) {
+    const stableId = stableIds.get(versionId);
     posts.set(versionId, {
       tags: post.tags,
       ...(post.author !== undefined ? { author: post.author } : {}),
+      ...(stableId !== undefined ? { stableId } : {}),
     });
   }
 

@@ -55,6 +55,25 @@ export function validateRatingCollection(value: unknown): RatingCollection {
   const records = validateRecordArray(obj.records, 'records');
   const cached = validateRecordArray(obj.cached, 'cached');
 
+  // `records` is "the owner's own public rating records" (ratings.md §7),
+  // and records marked `public: false` are "never transmitted to other
+  // peers" (§2.1) — so neither array may contain a private record, and
+  // `records` may contain only the owner's own.
+  for (const record of records) {
+    if (record.rater !== obj.owner) {
+      fail(
+        `"records" may contain only the owner's own ratings, but contains one by ${JSON.stringify(record.rater)}`,
+      );
+    }
+  }
+  for (const record of [...records, ...cached]) {
+    if (!record.public) {
+      fail(
+        'a collection may not contain a record with "public": false — private ratings are never transmitted',
+      );
+    }
+  }
+
   return {
     neusnet_version: 1,
     type: 'rating_collection',

@@ -4,7 +4,7 @@
 
 This document specifies the neusnet content metadata format — the atomic unit of a neusnet post. It is a companion to [README.md](../README.md) (overview and motivation), [ratings.md](ratings.md) (Layer 1: Rating Protocol), [identity.md](identity.md) (Layer 3: Identity), [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution), and [client-recommendations.md](client-recommendations.md) (client implementation recommendations).
 
-The examples in this document use [IPFS](https://ipfs.tech)/IPNS terminology (CIDs, IPNS names) as the reference implementation. All concepts generalize to other hosting substrates; see Section 2 for the abstract model and Section 8 for notes on non-IPFS deployments.
+The examples in this document use [IPFS](https://ipfs.tech)/IPNS terminology (CIDs, IPNS names) as the reference implementation. All concepts generalize to other hosting substrates; see Section 2 for the abstract model, and identity.md §2.1 for identity substrates other than native neusnet keypairs.
 
 ---
 
@@ -31,7 +31,7 @@ Every neusnet post has two distinct identifiers serving different purposes.
 - Is what `parents` fields in reply posts reference, recording which exact version(s) were being replied to
 - Is what `previous` fields reference to form the version chain
 
-Clients aggregate ratings across all versions of a post by building the canonical version history from the stable `id` (see Section 5.3) and summing ratings across all versions in that history.
+Clients aggregate ratings across the versions of a post by building its canonical version history from the stable `id` (see Section 5.2) and then combining the ratings of the versions in that history, deduplicated by rater (see Section 5.3 and ratings.md §2.5).
 
 ### 2.1 Stable Identifier Forms
 
@@ -132,7 +132,7 @@ Each content reference object:
 
 **`size`** — integer. Optional. Size of the content payload in bytes. Allows clients to make informed prefetch decisions, particularly for large media files. Should reflect the size of the raw content, not any transport encoding.
 
-**`hash`** — string. Optional but strongly recommended when `uri` is a mutable or non-content-addressed reference (HTTPS, IPNS, magnet links, etc.). A cryptographic digest of the content payload, expressed as `algorithm:hexdigest` (e.g. `sha256:abc123...`, `blake3:def456...`). Serves two purposes: integrity verification (confirming that retrieved content matches what the author published) and content identity confirmation across posts (enabling the aggregation described in Section 6.2 even when immutable CIDs are not used). For IPFS CID references, this field is redundant but may be included for cross-substrate compatibility. Recommended algorithm: SHA-256 for broad interoperability; [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) for performance in implementations where it is available.
+**`hash`** — string. Optional but strongly recommended when `uri` is a mutable or non-content-addressed reference (HTTPS, IPNS, etc.). A cryptographic digest of the content payload, expressed as `algorithm:hexdigest` (e.g. `sha256:abc123...`, `blake3:def456...`). Serves two purposes: integrity verification (confirming that retrieved content matches what the author published) and content identity confirmation across posts (Section 4.3), which enables the aggregation described in Section 6.2 even when immutable URIs are not used. For IPFS CID references, this field is redundant but may be included for cross-substrate compatibility. Recommended algorithm: SHA-256 for broad interoperability; [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) for performance in implementations where it is available.
 
 **`inline_content`** — string. Present only when `uri` is `inline:` (see Section 4.2).
 
@@ -176,6 +176,20 @@ Inline content eliminates a separate content fetch for short posts. There is no 
 
 ---
 
+### 4.3 Content Identity
+
+Some mechanisms in this specification need to know whether two metadata files refer to the **same content** — most importantly, whether a third-party introduction may have its ratings aggregated with the author's own version (Section 6.2, ratings.md §2.5). Content identity is confirmed only by evidence that cannot be silently changed after the fact. Two content references confirm the same content if any of the following holds:
+
+- **Matching immutable URI.** Both are the same immutable URI (Section 4.1): the same IPFS content address (compared exactly — CIDs are case-sensitive), or magnet links naming the same BitTorrent infohash (compared case-insensitively, ignoring other parameters such as display name and trackers).
+- **Matching hash.** Both carry a `hash` field with the same algorithm and the same digest, each compared case-insensitively. Hashes using different algorithms are never compared.
+- **Identical inline content.** Both are `inline:` references whose `inline_content` is identical, compared exactly with no Unicode normalization (consistent with identity.md §4.2). Every inline reference has the same `uri`, so the text itself is the only possible evidence. To confirm identity between an inline reference and a non-inline one, the inline reference must carry an explicit `hash`.
+
+A match between *mutable* URIs (HTTPS, IPNS) does **not** confirm identity on its own — the server can change what it serves at that address. A URI whose scheme is not recognized as immutable is treated as mutable.
+
+Two metadata files confirm the same content if any reference in one confirms the same content as any reference in the other. A single match suffices because a file's references are mirrors of one content (Section 4).
+
+---
+
 ## 5. Version History and Integrity
 
 ### 5.1 Publishing an Edit
@@ -192,21 +206,32 @@ Prior versions remain accessible at their original version identifiers as long a
 
 ### 5.2 Canonical Version History
 
-The canonical version history of a post is scoped to a single author. It is constructed as follows:
+The canonical version history of a post is scoped to a single author. Its inputs are the stable `id`; what that `id` currently resolves to (the **current version** — resolution itself is the hosting layer's job, see hosting.md); and the set of metadata files the client knows of, each keyed by its version identifier.
 
-1. Resolve the stable `id` to obtain the current version's metadata file.
-2. Identify the **canonical author**: the `author` field value in this current version, whose key must match the `signature`. If the current version is not author-signed, walk backwards through `previous` links until an author-signed version is found; that author is the canonical author.
-3. Follow `previous` links backwards, including only versions that are signed by the canonical author's key. Versions signed by any other key are excluded from the canonical chain regardless of their `id` or content.
-4. The resulting ordered list of author-signed versions is the canonical version history.
+A metadata file is **author-signed** if its `signature` verifies against the key identified by its own `author` field. (For native `nid1` identifiers this is a direct Ed25519 check; for other identity substrates, per identity.md §2.1, verification follows that substrate's rules.)
 
-Any metadata file that claims a given `id` but does not appear in the canonical version history is **anomalous**. Anomalous posts fall into distinct categories, distinguished by the relationship between their `author` field and their `signature`:
+The history is constructed as follows:
 
-| Category | Author field | Signer | Treatment |
-|----------|-------------|--------|-----------|
-| **Canonical version** | Canonical author | Canonical author | In history; ratings included in aggregate |
-| **Memory-holed version** | Canonical author | Canonical author | Not in chain (skipped by `previous`); ratings still included in aggregate |
-| **Third-party introduction** | Canonical author | Different party | Not in chain; ratings may aggregate if content identity confirmed (see Section 6.2) |
-| **False claimant** | Different author | That different author | Excluded from aggregate; shown only if directly linked, clearly flagged |
+1. Resolve the stable `id` to obtain the current version's metadata file. (If the file's own `id` differs from the one resolved, the pointer and the file disagree and there is no history to build.)
+2. Walk backwards from the current version through its `previous` links, visiting each metadata file that claims this `id`. The walk ends at a file the client does not yet have (which it should fetch, and may extend the history afterwards); at a file claiming a different `id` (not a version of this post, so its links are not followed); or at a file already visited (a cycle — impossible with content-addressed identifiers, but untrusted data can claim anything).
+3. Identify the **canonical author**: the `author` of the first author-signed version on this walk, beginning with the current version itself. If no version on the walk is author-signed, the post has no canonical author and no canonical history (see below).
+4. The **canonical version history** is the author-signed versions on the walk whose `author` is the canonical author, newest first. Other versions on the walk are skipped, *but the walk continues through them*, so a stray copy in the middle of a chain does not truncate the author's own history. Versions signed by any other key are excluded regardless of their `id` or content.
+
+**Posts with no canonical author.** A bridged post whose author has not joined neusnet (Section 6.3) has no author-signed version and therefore no canonical history. The current version then acts as the **anchor**: it is not anomalous, and other files are categorized and content identity is confirmed relative to it. The **claimed author** is the canonical author when one exists, and otherwise the `author` of the current version (if it names one).
+
+**Discovering anomalous files.** Any metadata file that claims the `id` but is not in the canonical version history (and is not the anchor) is **anomalous**. This specification does not say how a client comes to know of such files; typically they turn up as the `item` of a rating record, or via gossip or an endorsement list, and the client fetches them. Each is categorized by comparing its `author` field with the claimed author, and by its signature:
+
+| Category | Author field | Signature | Treatment |
+|----------|-------------|-----------|-----------|
+| **Canonical version** | Canonical author | Canonical author's | In history; ratings included in aggregate |
+| **Memory-holed version** | Claimed author | Author-signed | Not in chain (skipped by `previous`); ratings still included in aggregate |
+| **Third-party introduction** | Claimed author | Present, but not the author's | Not in chain; ratings aggregate if content identity is confirmed (Section 6.2) |
+| **Unsigned copy** | Claimed author | None | Not in chain; treated like a third-party introduction — ratings aggregate if content identity is confirmed |
+| **False claimant** | A different author, or none | Any | Excluded from aggregate; shown only if directly linked, clearly flagged |
+
+"False claimant" describes the *claim*, not the claimant's intent: a file naming a different author — or no author — for an `id` that belongs to someone else is categorized the same way whether it is plagiarism, a mistake, or an unattributed duplicate, because the protocol cannot tell them apart. How it is signed does not change this: a rival signing as themselves is the clearest case, but an introducer attributing the post to someone else conflicts with the canonical author just as much.
+
+A signature alone does not say *who* signed a third-party introduction — only that it was not the author. Whether to credit an introduction therefore depends on whether the client recognizes and trusts its introducer (Section 6.2), which is outside the history construction itself.
 
 The key properties of this model:
 
@@ -248,9 +273,9 @@ Clients must display trust level visibly and consistently. Author-verified posts
 
 A third-party introduction is a metadata file where the `author` field names the true author of the content but the `signature` is from a different party (the introducer). This is a legitimate and expected pattern — it is how external content ([Bluesky](https://bsky.social) posts, web articles, etc.) enters the neusnet graph before or instead of the original author posting it themselves.
 
-Third-party introductions are not part of any post's canonical version history (Section 5.2), since they are not signed by the canonical author. Their ratings may nonetheless be included in the aggregate score for a post when content identity is confirmed via matching immutable URIs or hash fields across the introduction and a canonical version — the full aggregation rules are specified in ratings.md §2.5.
+Third-party introductions are not part of any post's canonical version history (Section 5.2), since they are not signed by the canonical author. Their ratings may nonetheless be included in the aggregate score for a post when content identity is confirmed (Section 4.3: matching immutable URIs, hash fields, or identical inline content) between the introduction and an author-signed version of the post — the full aggregation rules are specified in ratings.md §2.5.
 
-This content-matching aggregation applies only to third-party introductions where the `author` field names the canonical author. It does not apply to false claimants (where a different author is named and signed), even if their content happens to match.
+This content-matching aggregation applies only to third-party introductions — and to unsigned copies (Section 5.2), which are treated the same way — where the `author` field names the claimed author. It does not apply to false claimants (a different author, or none, is named), however they are signed, even if their content happens to match. An introduction is confirmed only against an author-signed version of the post (or, for a post with no author-signed version, the anchor); one introduction cannot vouch for another.
 
 When the original author later publishes their own author-verified post for the same `id`, clients should:
 - Promote that post to canonical status.
@@ -274,6 +299,8 @@ When a bridged post's original author establishes a neusnet identity, they may p
 ## 7. Open Questions
 
 **7.1 Third-party attestation scope.** The "third-party attested" status in Section 6.1 covers the case where an introducer signs a bridged post. It does not yet specify what claims the introducer's signature covers — for example, "I retrieved this content at this URI at this timestamp and its hash was X" versus simply "I attest this metadata file is accurate." A more precise attestation schema, possibly including a content hash snapshot, would strengthen the integrity guarantees of the introduction mechanism and make content identity confirmation (Section 6.2) more robust.
+
+**7.2 Credit for unconfirmed attribution.** A third-party introduction — or any file not signed by its named author — *attributes* content to its `author`. Because a rating of a post counts toward the affinity of its author and tags (ratings.md §3.1), a third party can put words in an author's mouth: ratings given to content falsely attributed to someone build or damage that person's standing, even though Section 5.2 keeps those ratings out of the author's own post aggregate. This specification currently credits the attribution regardless of whether content identity was confirmed. One alternative is to withhold the attribution from derived affinity unless content identity is confirmed or the author's signature verifies — at the cost that bridged posts, whose attributions can never be confirmed against a neusnet key, would build no affinity with their platform authors until those authors join. Because author attribution is supplied to the trust graph computation by the caller, a client can apply such a policy today; the open question is whether the protocol should specify one.
 
 ---
 

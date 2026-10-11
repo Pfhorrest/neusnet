@@ -1,9 +1,11 @@
 # neusnet-core
 
 A reference implementation of the core, substrate-independent primitives of
-the [neusnet protocol](../README.md): identity, signing, canonicalization,
-and tag normalization, with more to come (see [PROGRESS.md](PROGRESS.md)
-for what's implemented so far and what's next).
+the [neusnet protocol](../README.md): identity and signing, canonical JSON,
+tag normalization, post metadata, rating records, the trust graph
+(affinity and effective scores), and rating aggregation across post
+versions — with more to come (see [PROGRESS.md](PROGRESS.md) for what's
+implemented so far and what's next).
 
 This package has no network, storage, or UI code in it. It's the
 deterministic, pure-logic foundation everything else — a CLI, a web
@@ -54,23 +56,23 @@ npm run test:coverage  # tests + coverage report (thresholds enforced)
 
 ## What's in here, and how to use it
 
-Everything is a named export from its own module under `src/`; there's no
-default export anywhere, and no global state beyond the one-time crypto
-wiring described below. Import what you need directly:
+Everything is a named export of the package entry point (`src/index.ts`);
+there's no default export anywhere, and no global state beyond the
+one-time crypto wiring described below. The examples below import from
+the package name:
 
 ```ts
-import { generateKeypair, encodeNid1 } from 'neusnet-core/identity/keypair';
-import { signObject, verifyObject } from 'neusnet-core/identity/signing';
-import { normalizeTag, matchesTagQuery } from 'neusnet-core/ratings/tags';
+import { generateKeypair, signObject, normalizeTag } from 'neusnet-core';
 ```
 
-(A single barrel `index.ts` re-exporting everything will be added once
-there's enough surface area to make one useful — see PROGRESS.md.)
+Until this is published to npm, that name doesn't resolve on its own: inside
+this repo, import from `./src/index.js` (as the tests do), or run
+`npm run build` and import from `./dist/index.js`.
 
 ### Identity: keypairs and `nid1` identifiers (identity.md §2–§3)
 
 ```ts
-import { generateKeypair, encodeNid1, decodeNid1 } from './src/identity/keypair.js';
+import { generateKeypair, encodeNid1, decodeNid1 } from 'neusnet-core';
 
 const { secretKey, publicKey } = generateKeypair();
 const myId = encodeNid1(publicKey);
@@ -93,7 +95,7 @@ field (if present) from what actually gets signed, and JSON-canonicalizes
 document in the protocol does.
 
 ```ts
-import { signObject, verifyObject } from './src/identity/signing.js';
+import { signObject, verifyObject } from 'neusnet-core';
 
 const rating = { rater: myId, item: 'ipfs://...', ratings: { true: 1 } };
 const signed = signObject(rating, secretKey);
@@ -114,7 +116,7 @@ const validRecords = untrustedRecords.filter((r) => verifyObject(r, authorKey));
 ### Tag normalization and search (ratings.md §6.1–§6.3)
 
 ```ts
-import { normalizeTag, matchesTagQuery } from './src/ratings/tags.js';
+import { normalizeTag, matchesTagQuery } from 'neusnet-core';
 
 normalizeTag('Science Fiction'); // => "science-fiction"
 normalizeTag('Philosophy.Epistemology'); // => "philosophy.epistemology"
@@ -127,6 +129,117 @@ normalizeTag('philosophy..epistemology'); // throws — consecutive dots are inv
 matchesTagQuery('philosophy.epistemology', 'epistemology'); // => true
 matchesTagQuery('psychology.epistemology', 'philosophy.epistemology'); // => false
 ```
+
+### Posts (metadata.md §3–§4)
+
+```ts
+import { createPostMetadata, validatePostMetadata, computeTrustLevel } from 'neusnet-core';
+
+const post = createPostMetadata(
+  {
+    id: 'ipns://k51-example-post', // the post's stable identifier — you mint this
+    author: bobId,
+    tags: ['philosophy'], // must already be normalized
+    content: [{ uri: 'inline:', mime_type: 'text/plain', inline_content: 'Hello, neusnet.' }],
+    timestamp: 1_700_000_000, // you supply "now"; nothing here reads the clock
+  },
+  bob.secretKey,
+);
+
+validatePostMetadata(untrustedJson); // throws on anything malformed
+computeTrustLevel(post, bob.publicKey); // => 'author-verified'
+```
+
+Validation checks shape and types only. Two things are deliberately left
+to the caller: minting a new post's stable `id` (the spec defines what an
+identifier must look like but not how to mint one), and supplying the
+timestamp. `computeTrustLevel` needs the key you believe signed the post —
+Ed25519 signatures don't say who made them — and verifies it before
+classifying, rather than trusting you.
+
+### Ratings and the trust graph (ratings.md §2–§5)
+
+```ts
+import { buildTrustGraph, createRatingRecord, effectivePostScore } from 'neusnet-core';
+
+// Alice rates Bob's post. `item` is the post's *version* identifier — in a
+// real deployment, the content address of its metadata file.
+const versionId = 'ipfs://bafy-example-version-1';
+const rating = createRatingRecord(
+  {
+    rater: aliceId,
+    item: versionId,
+    item_type: 'post',
+    ratings: { true: 1 },
+    timestamp: 1_700_000_100,
+    public: true,
+  },
+  alice.secretKey,
+);
+
+// The graph needs to know whom and what each rated post is attributed to.
+const graph = buildTrustGraph({
+  records: [rating],
+  posts: new Map([[versionId, { author: bobId, tags: post.tags }]]),
+});
+
+// How does the post look to Alice?
+effectivePostScore(graph, aliceId, versionId, { dimension: 'true' }); // => 1
+```
+
+Scores are always _from one viewer's point of view_: the same post has a
+different effective score for each user, depending on whom they trust and
+whom those people trust (decaying with distance). Also exported:
+`derivedAffinity`, `directAffinity`, `compositeAffinity`, `confidence`,
+`effectiveAffinity`, and `meetsVisibilityThreshold`.
+
+The traversal is checked against the worked example in ratings.md
+Appendix B, number for number (`test/ratings/trust-graph.test.ts`). If
+you're going to change `src/ratings/trust-graph.ts`, read its section of
+[PROGRESS.md](PROGRESS.md) first — several non-obvious behaviors in there
+were settled deliberately.
+
+This library never checks a rating record's signature for you: records are
+assumed already validated and verified (`verifyObject`), the way
+identity.md §4.4 requires.
+
+### Versions and aggregation (metadata.md §5, ratings.md §2.5)
+
+A post can be edited; each edit is a new version with its own identifier.
+`buildVersionHistory` reconstructs a post's canonical history and sorts
+every other file claiming its `id` — versions the author skipped over,
+third-party introductions, rival claims — into the categories in
+metadata.md §5.2. `buildTrustGraphFromPosts` then builds a trust graph in
+which each rater counts once per _post_, however many versions they rated:
+
+```ts
+import { buildVersionHistory, buildTrustGraphFromPosts } from 'neusnet-core';
+
+// Every metadata file you know of, keyed by version identifier (a CID in real use).
+const known = new Map([
+  ['ipfs://v1', v1],
+  ['ipfs://v2', v2], // v2.previous === 'ipfs://v1'
+]);
+
+const history = buildVersionHistory({ id: postId, currentVersionId: 'ipfs://v2', known });
+history.canonical; // => ['ipfs://v2', 'ipfs://v1'], newest first
+
+// Carol rated v1 (+1), then later v2 (-1). Her latest opinion counts, once:
+const graph = buildTrustGraphFromPosts({
+  known,
+  currentVersions: new Map([[postId, 'ipfs://v2']]),
+  records,
+});
+derivedAffinity(graph, carolId, bobId, 'user', { dimension: 'true' }); // => -1
+```
+
+Nothing is fetched: you supply what you know and what the stable id
+currently resolves to (the hosting layer's job), and `history.missing`
+lists version identifiers you'd need to fetch to extend the history.
+Verifying an author's signature works for native `nid1` identities out of
+the box; for other identity substrates, pass your own `isAuthorSigned`.
+`test/ratings/aggregate.test.ts` is the best worked reference for the
+edge cases (skipped versions, introductions, rival claims, bridged posts).
 
 ### Canonicalization and encoding (lower-level, used internally)
 

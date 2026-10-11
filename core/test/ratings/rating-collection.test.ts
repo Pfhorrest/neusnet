@@ -119,6 +119,58 @@ describe('validateRatingCollection', () => {
     ).toThrow();
   });
 
+  it("rejects a records entry whose rater is not the collection's owner (records are the owner's own)", () => {
+    expect(() =>
+      validateRatingCollection({
+        neusnet_version: 1,
+        type: 'rating_collection',
+        owner: 'nid1alice...',
+        generated: 1,
+        records: [{ ...RECORD, rater: 'nid1someone-else...' }],
+        cached: [],
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a private (public: false) record in records — private ratings are never transmitted', () => {
+    expect(() =>
+      validateRatingCollection({
+        neusnet_version: 1,
+        type: 'rating_collection',
+        owner: 'nid1alice...',
+        generated: 1,
+        records: [{ ...RECORD, public: false }],
+        cached: [],
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a private (public: false) record in cached', () => {
+    expect(() =>
+      validateRatingCollection({
+        neusnet_version: 1,
+        type: 'rating_collection',
+        owner: 'nid1alice...',
+        generated: 1,
+        records: [],
+        cached: [{ ...RECORD, rater: 'nid1bob...', public: false }],
+      }),
+    ).toThrow();
+  });
+
+  it("accepts cached copies of other raters' public records", () => {
+    expect(() =>
+      validateRatingCollection({
+        neusnet_version: 1,
+        type: 'rating_collection',
+        owner: 'nid1alice...',
+        generated: 1,
+        records: [],
+        cached: [{ ...RECORD, rater: 'nid1bob...' }],
+      }),
+    ).not.toThrow();
+  });
+
   it('rejects a missing records array', () => {
     expect(() =>
       validateRatingCollection({

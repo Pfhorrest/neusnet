@@ -422,6 +422,33 @@ describe('buildTrustGraphFromPosts — the whole stack together', () => {
     expect(effectivePostScore(graph, 'U', 'v2', opts)).toBeCloseTo(-0.5, 10);
   });
 
+  it('uses the viewer\u2019s most recent rating across versions as their own rating of the post', () => {
+    // U rated v2 first, then later rated the older v1. Cross-version
+    // deduplication keeps only the v1 record — which is still U's current
+    // opinion of the post, and must still count as U's direct rating when
+    // scoring v2 (ratings.md §5: direct_rating(U, P)), not silently vanish.
+    const { files, currentVersions } = twoVersionWorld();
+    const records: RatingRecord[] = [
+      {
+        neusnet_version: 1,
+        type: 'rating',
+        rater: 'U',
+        item: A_ID,
+        item_type: 'user',
+        ratings: { true: 1 },
+        timestamp: 1,
+        public: true,
+      },
+      rating('U', 'v2', { true: 0.6 }, 10),
+      rating('U', 'v1', { true: -0.2 }, 20),
+    ];
+    const graph = buildTrustGraphFromPosts({ known: known(files), currentVersions, records });
+    // composite_affinity(U, A) = (2 * derived(-0.2) + 1 * direct(+1)) / 3 = 0.2
+    // direct term = -0.2 (the v1 record), author term = 0.2  =>  mean = 0
+    // (If the direct term were lost: the score would be just 0.2.)
+    expect(effectivePostScore(graph, 'U', 'v2', opts)).toBeCloseTo(0, 10);
+  });
+
   it('keeps a rival author\u2019s ratings attributed to the rival, not the true author', () => {
     const files = {
       v1: version({ timestamp: 1, content: [{ uri: 'ipfs://same' }] }),
