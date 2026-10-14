@@ -22,7 +22,50 @@ export {
   isValidNid1,
   type Keypair,
 } from './identity/keypair.js';
-export { bytesToSign, signObject, verifyObject } from './identity/signing.js';
+export {
+  bytesToSign,
+  signObject,
+  verifyNativeSignature,
+  verifyObject,
+  type SignatureVerifier,
+} from './identity/signing.js';
+export {
+  createIdentityDocument,
+  createIdentityLink,
+  isValidIdentityDocument,
+  validateIdentityDocument,
+  verifyIdentityDocument,
+  verifyIdentityLink,
+  verifyMutualLink,
+  type CreateIdentityDocumentInput,
+  type IdentityDocument,
+  type IdentityLink,
+  type ProfileLink,
+  type VerifyOptions,
+} from './identity/identity-document.js';
+export {
+  extractNeusnetIds,
+  normalizeProfileUrl,
+  verifyPlatformBinding,
+  type PlatformBindingResult,
+  type VerifyPlatformBindingInput,
+} from './identity/platform-binding.js';
+export {
+  createRecoveryRotation,
+  createStandardRotation,
+  isValidKeyRotation,
+  resolveIdentityChain,
+  resolveSuccessor,
+  validateKeyRotation,
+  verifyKeyRotation,
+  type IdentityChain,
+  type KeyRotation,
+  type RecoveryRotation,
+  type RecoverySignature,
+  type StandardRotation,
+  type SuccessorResult,
+  type VerifyKeyRotationOptions,
+} from './identity/rotation.js';
 
 // Post metadata (metadata.md)
 export {

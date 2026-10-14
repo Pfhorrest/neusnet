@@ -2,6 +2,7 @@ import * as ed from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha2.js';
 import { canonicalizeJson } from '../canonicalization/jcs.js';
 import { decodeBase64Url, encodeBase64Url } from '../encoding/base64url.js';
+import { decodeNid1, isValidNid1 } from './keypair.js';
 
 ed.hashes.sha512 = sha512;
 
@@ -71,4 +72,22 @@ export function verifyObject(obj: object, publicKey: Uint8Array): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Checks a signed object's signature against the identity named by
+ * `signerId`. The native implementation, {@link verifyNativeSignature},
+ * handles `nid1` identifiers only; callers using other identity substrates
+ * (identity.md §2.1, §4.1) supply their own.
+ */
+export type SignatureVerifier = (signed: object, signerId: string) => boolean;
+
+/**
+ * The native {@link SignatureVerifier}: `signerId` is a `nid1` identifier
+ * and the object's signature verifies against the key it encodes. Returns
+ * `false` — never throws — for any other kind of identifier.
+ */
+export function verifyNativeSignature(signed: object, signerId: string): boolean {
+  if (!isValidNid1(signerId)) return false;
+  return verifyObject(signed, decodeNid1(signerId));
 }

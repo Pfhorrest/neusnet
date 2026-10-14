@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { generateKeypair } from '../../src/identity/keypair.js';
-import { signObject, verifyObject } from '../../src/identity/signing.js';
+import { encodeNid1, generateKeypair } from '../../src/identity/keypair.js';
+import { signObject, verifyNativeSignature, verifyObject } from '../../src/identity/signing.js';
 
 const SEED_A = new Uint8Array(32).fill(1);
 const SEED_B = new Uint8Array(32).fill(2);
@@ -92,5 +92,26 @@ describe('signObject / verifyObject', () => {
     const kp = generateKeypair(SEED_A);
     const signed = signObject({ a: 1 }, kp.secretKey);
     expect(verifyObject(signed, new Uint8Array(16))).toBe(false);
+  });
+});
+
+describe('verifyNativeSignature', () => {
+  it('verifies an object against the nid1 identifier of the key that signed it', () => {
+    const kp = generateKeypair(SEED_A);
+    const signed = signObject({ a: 1 }, kp.secretKey);
+    expect(verifyNativeSignature(signed, encodeNid1(kp.publicKey))).toBe(true);
+  });
+
+  it('rejects an identifier naming a different key', () => {
+    const signed = signObject({ a: 1 }, generateKeypair(SEED_A).secretKey);
+    expect(verifyNativeSignature(signed, encodeNid1(generateKeypair(SEED_B).publicKey))).toBe(
+      false,
+    );
+  });
+
+  it('returns false, rather than throwing, for a signer identifier that is not a native one', () => {
+    const signed = signObject({ a: 1 }, generateKeypair(SEED_A).secretKey);
+    expect(verifyNativeSignature(signed, 'at://did:plc:abc')).toBe(false);
+    expect(verifyNativeSignature(signed, 'nid1not-valid!')).toBe(false);
   });
 });

@@ -8,15 +8,15 @@ read this whole file before writing any code — it also records decisions
 you shouldn't need to re-litigate.
 
 **Last updated:** this entry was written during the session that added
-content identity confirmation, canonical version history construction,
-and cross-version rating aggregation (metadata.md §4.3/§5.2/§6.2,
-ratings.md §2.5), wired through to the trust graph — and that revised the
-spec substantially along the way (see "Spec revisions made during the
-version-history work" below).
+identity documents and link records (identity.md §5, §7), external
+platform binding (§2.2), and key rotation with recovery quorums (§6) — and
+that revised identity.md substantially, including fixing a hole that would
+have made recovery rotations unpublishable (see "Spec revisions made
+during the identity work" below).
 
 ## Current state at a glance
 
-- **415 tests, all passing.** `npm test` is green.
+- **550 tests, all passing.** `npm test` is green.
 - **~99.8% statement coverage, ~98% branch coverage, 100%
   functions/lines** across every implemented module — remaining gaps are
   small branch-level edge permutations with real diminishing returns. A
@@ -58,6 +58,9 @@ regressed before doing anything else, if you're resuming this.
 | Content identity                         | `src/metadata/content-identity.ts`           | metadata.md §4.3     | Immutable URI / hash / inline-text matching; a mutable URI never confirms identity alone                                                                               |
 | Canonical version history                | `src/metadata/version-history.ts`            | metadata.md §5.2     | Walks `previous`, finds the canonical author, categorizes every other known file; author-signature check is injectable for non-native substrates                       |
 | Cross-version rating aggregation         | `src/ratings/aggregate.ts`                   | ratings.md §2.5      | One rating per rater per post; `buildTrustGraphFromPosts` wires metadata + records into a `TrustGraph`                                                                 |
+| Identity documents + link records        | `src/identity/identity-document.ts`          | identity.md §5, §7   | Validation, native signing, mutual-link verification; `signing.ts` gained the shared `SignatureVerifier`/`verifyNativeSignature`                                       |
+| External platform binding                | `src/identity/platform-binding.ts`           | identity.md §2.2     | Pure half only: token extraction + both-directions check; the caller fetches profiles and documents                                                                    |
+| Key rotation (standard + recovery)       | `src/identity/rotation.ts`                   | identity.md §6       | Per-declaration verification, plus `resolveIdentityChain`, which _reports_ forks as `contested` rather than choosing                                                   |
 | Package entry point                      | `src/index.ts`                               | —                    | Re-exports the public API; `test/index.test.ts` pins the export surface, and the built `dist/` was verified importable in plain Node                                   |
 
 Post metadata scope note: schema validation, creation/signing, and
@@ -74,13 +77,13 @@ implementation deferral.
 
 Roughly in priority order (matches dependency order):
 
-1. **Identity documents** (identity.md §5) — schema, creation, signing,
-   the `recovery_keys`/`recovery_threshold` fields, `aggregate_linked`,
-   `proxy`/`operator` fields.
-2. **Key rotation declarations** (identity.md §6) — both the dual-signature
-   standard rotation and the recovery-quorum rotation (§6.2's
-   `recovery_signatures` threshold verification).
-3. **Channels** (ratings.md §6.4–§6.6) — this is more client-shaped logic
+1. **Linked-identity aggregation** (identity.md §7.1) — the two-layer
+   preference model (`aggregate_linked` on the owner's side, a viewer
+   override) for treating mutually-linked identities as one node in the
+   trust graph. The verification half (`verifyMutualLink`) exists; the
+   graph-side merging does not, and needs `linkedClusters` (connected
+   components of the mutual-link graph) first.
+2. **Channels** (ratings.md §6.4–§6.6) — this is more client-shaped logic
    (local taxonomy, suggestion generation) than pure protocol-object
    validation; worth deciding whether it belongs in this package at all
    or in a future client-facing package, given CONTRIBUTING.md's scope
@@ -91,7 +94,7 @@ Roughly in priority order (matches dependency order):
    logic) probably don't, since they're explicitly non-normative client
    recommendations, not protocol requirements. Revisit when actually
    building this.
-4. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
+3. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
    Mechanical now that post metadata exists (reuses the same patterns —
    `src/metadata/post.ts` is a good template to follow).
 
@@ -190,6 +193,59 @@ provably unreachable (upstream invariants — `compositeAffinitiesOf`'s
 Map-based dedup and an earlier guard in the same loop — already
 guarantee what they checked). Deleting provably-dead code beats
 contriving a test that has to break the invariant to exercise it.
+
+## Identity: what to know before touching it
+
+- **Validators enforce things the schema only implies**, each now stated in
+  identity.md §5.2/§7: `recovery_threshold` is at least 1 (0 would authorize
+  a rotation on no signatures); recovery keys are distinct and differ from
+  the identity's own key; `operator` exists only on proxies and isn't the
+  proxy itself; link records can't self-link or repeat. A `nid1`-looking
+  identifier must actually be a valid one.
+- **Rotation signatures cover five fields, not "everything but
+  `signature`".** `signObject` strips only a field named `signature`, but a
+  rotation has `old_signature`, `new_signature`, and `recovery_signatures`,
+  so rotation signs an explicit payload (`neusnet_version`, `type`,
+  `old_id`, `new_id`, `timestamp`). A declaration carries exactly one
+  authorization form.
+- **Recovery quorums count distinct keys, and ignore junk entries.** A key
+  listed twice must not satisfy a threshold of 2 (a test pins this — it is
+  the obvious way to get the verifier wrong), and entries from unregistered
+  keys or with bad signatures are ignored rather than fatal, because
+  `recovery_signatures` is outside every signature's coverage.
+- **The library reports facts; it doesn't invent policy.** Forked rotations
+  come back `contested`. The authorized recovery set is an _input_ to
+  verification. Both are open questions in identity.md §8, because a
+  compromised primary key can issue its own rotation and can swap in its own
+  recovery keys — and the spec doesn't yet say how clients should defend
+  against either. Don't "fix" these in code before the spec decides.
+- **Link-record signatures are redundant inside a signed document** (the
+  document signature already covers them) but are specified, and checked by
+  `verifyMutualLink`, so a record can be transported on its own.
+- **Platform tokens prove nothing in text the account owner doesn't
+  control.** `extractNeusnetIds`'s doc comment says so; callers must pass
+  bios or designated posts only.
+
+## Spec revisions made during the identity work
+
+- **identity.md §6.3 had a hole:** rotation declarations were to be
+  published under "the user's IPNS directory", but a recovery rotation
+  exists because the old key is lost — and only the old key can write to
+  the old identity's directory. Declarations now live under the **new**
+  identity's `/rotations/` (a standard rotation may also be mirrored under
+  the old one), with propagation as the discovery path for followers of
+  the old identity.
+- **§6.1/§6.2** now state what is signed, the exactly-one-authorization
+  rule, chains and contested identities, and the distinct-key,
+  ignore-junk counting rule for recovery quorums.
+- **§5.2/§7** now state the constraints the validator enforces (above).
+- **New §8 Open Questions:** (8.1) which identity document is
+  authoritative for recovery keys, given that a compromised primary key can
+  rewrite them (suggested direction: a grace period before a recovery-key
+  change can authorize anything); (8.2) competing rotations; (8.3) finding
+  a successor from the old identity alone.
+- The cross-reference checker used on the spec suite now also understands
+  bold-labelled items like `**8.1 ...**` (open questions use that style).
 
 ## Version history and aggregation: what to know before touching it
 

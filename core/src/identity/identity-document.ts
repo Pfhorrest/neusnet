@@ -1,6 +1,11 @@
 import { validateContentReference, type ContentReference } from '../metadata/content-reference.js';
-import { NID1_PREFIX, decodeNid1, encodeNid1, generateKeypair, isValidNid1 } from './keypair.js';
-import { signObject, verifyObject } from './signing.js';
+import { NID1_PREFIX, encodeNid1, generateKeypair, isValidNid1 } from './keypair.js';
+import {
+  signObject,
+  verifyNativeSignature,
+  verifyObject,
+  type SignatureVerifier,
+} from './signing.js';
 
 /** A link to the user's presence elsewhere on the web (identity.md §5.2, `links`). */
 export interface ProfileLink {
@@ -39,21 +44,11 @@ export interface IdentityDocument {
   signature?: string;
 }
 
-/**
- * Checks `signed`'s signature against the identity named by `signerId`.
- * The native implementation handles `nid1` identifiers only; callers using
- * other identity substrates (identity.md §2.1, §4.1) supply their own.
- */
-export type SignatureVerifier = (signed: object, signerId: string) => boolean;
+export type { SignatureVerifier };
 
 export interface VerifyOptions {
   /** Defaults to the native check: `signerId` is a `nid1` identifier and the signature verifies against its key. */
   verify?: SignatureVerifier;
-}
-
-function nativeVerify(signed: object, signerId: string): boolean {
-  if (!isValidNid1(signerId)) return false;
-  return verifyObject(signed, decodeNid1(signerId));
 }
 
 function fail(message: string): never {
@@ -299,7 +294,7 @@ export function createIdentityDocument(
  */
 export function verifyIdentityDocument(doc: IdentityDocument, options?: VerifyOptions): boolean {
   if (doc.signature === undefined) return false;
-  return (options?.verify ?? nativeVerify)(doc, doc.id);
+  return (options?.verify ?? verifyNativeSignature)(doc, doc.id);
 }
 
 /**
@@ -336,7 +331,7 @@ export function verifyMutualLink(
 ): boolean {
   if (a.id === b.id) return false;
   if (!verifyIdentityDocument(a, options) || !verifyIdentityDocument(b, options)) return false;
-  const verify = options?.verify ?? nativeVerify;
+  const verify = options?.verify ?? verifyNativeSignature;
   const declares = (doc: IdentityDocument, otherId: string): boolean =>
     doc.linked_ids?.some((link) => link.linked_id === otherId && verify(link, doc.id)) ?? false;
   return declares(a, b.id) && declares(b, a.id);

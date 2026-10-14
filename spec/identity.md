@@ -142,8 +142,10 @@ For users on alternative substrates, the signature algorithm associated with tha
 Before signing, the object to be signed (a rating record, metadata file, identity document, or rotation declaration) is serialized to its canonical form using **JCS — JSON Canonicalization Scheme ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785))**:
 - Object keys sorted lexicographically at all levels
 - No insignificant whitespace
-- Unicode strings in NFC normalization
 - Numbers in their canonical JSON representation
+- Unicode string data preserved exactly as given — JCS explicitly performs **no** Unicode normalization. RFC 8785 is specific on this point: string content "MUST NOT be altered," and the standard notes that Unicode Normalization is deliberately out of scope for JCS-compliant processing.
+
+This last point has a practical consequence worth being explicit about: two strings that a human would consider identical but that differ in their underlying Unicode representation — for instance "é" as a single precomposed code point versus "e" followed by a combining acute accent — are, as far as JCS and signing are concerned, simply different strings, and will produce different canonical forms and therefore different signatures. The protocol places no normalization requirement on free-text fields generally; client implementations that want to avoid this kind of silent divergence (for example, so that a display name entered two different ways by the same input method doesn't produce two different canonical forms) should normalize user-entered text to a consistent form — NFC is the conventional choice — at input time, before the object is constructed and signed, rather than relying on canonicalization to do it for them. This is distinct from, and should not be confused with, the NFKC tag normalization specified in ratings.md §6.1, which is a deliberate protocol-level rule for a specific field, not a general property of JCS.
 
 All signature fields are excluded from the object before canonicalization and signing. All other fields are included.
 
@@ -210,13 +212,13 @@ An identity document is a signed JSON object:
 
 **`avatar`** — content reference object. Optional. A reference to an image file, using the same content reference format as metadata.md §4 (with `uri`, `mime_type`, `size`, and `hash` fields). Should be a square image; recommended formats are JPEG and PNG.
 
-**`links`** — array. Optional. A list of links to the user's presence elsewhere on the web. Each link is an object with `url` (string, required) and `label` (string, optional) fields.
+**`links`** — array. Optional. A list of links to the user's presence elsewhere on the web. Each link is an object with `url` (string, required, and an absolute URL) and `label` (string, optional) fields.
 
 **`status`** — string. Optional. A short free-text presence or status message, analogous to a chat platform's status field (e.g. "writing", "away until Friday", "open to discussions about modal logic"). Unlike `bio`, which describes the user in a stable way, `status` is intended to be updated frequently and reflects the user's current state or mood. Clients may display status alongside the user's display name in tag-feed buddy lists and other social views. There is no protocol-level mechanism for distinguishing online/offline presence — `status` is purely a user-published string, and its freshness is indicated by the identity document's `timestamp` field.
 
-**`recovery_keys`** — array of strings. Optional but strongly recommended. One or more `nid1`-encoded public keys of the user's registered recovery keypairs. Publishing these establishes a verifiable record before they are needed. A single recovery key is the recommended default for most users.
+**`recovery_keys`** — array of strings. Optional but strongly recommended. One or more `nid1`-encoded public keys of the user's registered recovery keypairs. Publishing these establishes a verifiable record before they are needed. Entries must be distinct (a key listed twice must not be able to count twice toward a threshold) and must differ from the identity's own key (a recovery key identical to the primary key is not a separate fallback). A single recovery key is the recommended default for most users.
 
-**`recovery_threshold`** — integer. Optional. The minimum number of recovery key signatures required to authorize a recovery rotation (see Section 6.2). Defaults to `1` if absent. Users who want stronger recovery security may register multiple recovery keys and set a higher threshold — for example, `recovery_threshold: 2` with three registered keys requires any two to cooperate. Must not exceed the length of `recovery_keys`.
+**`recovery_threshold`** — integer. Optional. The minimum number of recovery key signatures required to authorize a recovery rotation (see Section 6.2). Defaults to `1` if absent. Users who want stronger recovery security may register multiple recovery keys and set a higher threshold — for example, `recovery_threshold: 2` with three registered keys requires any two to cooperate. Must be at least `1` — a threshold of `0` would authorize a recovery rotation on no signatures at all — and must not exceed the length of `recovery_keys`; giving a threshold when there are no recovery keys is invalid.
 
 **`linked_ids`** — array. Optional. A list of other neusnet identities the user voluntarily declares as also belonging to them. See Section 7.
 
@@ -224,7 +226,7 @@ An identity document is a signed JSON object:
 
 **`proxy`** — boolean. Optional, defaults to `false`. Must be `true` if this identity is an automated agent operating on behalf of another identity — for example, an AI system modeling a human user's rating and posting behavior (see client-recommendations.md, "Personal AI Proxies"). A proxy identity is structurally distinct from a voluntarily linked alternate identity (Section 7): a proxy is a subordinate, derivative agent, not a peer account, and must be disclosed as such rather than presented as an equal identity. Clients must visibly and unambiguously mark all content from a `proxy: true` identity as automated in every context where it appears, not only on the identity document itself.
 
-**`operator`** — string. Required if `proxy` is `true`. The user identifier of the human (or other non-proxy identity) this proxy acts on behalf of. A proxy identity's `links` array should also point back to its operator's identity document, and — where the operator wishes to acknowledge the proxy — the operator's own identity document may list the proxy in `links` as well, though this is not required for the proxy's disclosure obligations to be satisfied. Only the `proxy` and `operator` fields on the proxy's own identity document are authoritative for disclosure purposes.
+**`operator`** — string. Required if `proxy` is `true`, and not permitted otherwise. The user identifier of the human (or other non-proxy identity) this proxy acts on behalf of; it must differ from the proxy's own `id`. A proxy identity's `links` array should also point back to its operator's identity document, and — where the operator wishes to acknowledge the proxy — the operator's own identity document may list the proxy in `links` as well, though this is not required for the proxy's disclosure obligations to be satisfied. Only the `proxy` and `operator` fields on the proxy's own identity document are authoritative for disclosure purposes.
 
 **`timestamp`** — integer. Unix timestamp of when this version of the identity document was published.
 
@@ -291,10 +293,16 @@ A key rotation declaration is a signed record that supersedes one key with anoth
 
 A valid standard rotation declaration must be signed by **both** the old key and the new key, proving that whoever controls the new key also controlled the old key at the time of rotation.
 
+**What is signed.** Every signature on a rotation declaration — `old_signature`, `new_signature`, and each entry of `recovery_signatures` — is made over the JCS canonical form (§4.2) of the same five fields: `neusnet_version`, `type`, `old_id`, `new_id`, and `timestamp`. No signature covers any other signature. (This differs from the rule for other objects, where the single `signature` field is excluded: a rotation carries several signature fields, and all of them are excluded.) `old_id` and `new_id` must differ. A declaration carries exactly one of `old_signature` (a standard rotation) or `recovery_signatures` (a recovery rotation, §6.2); one carrying both is invalid, since it would be ambiguous which authorization it stands on.
+
 Upon encountering a valid rotation declaration, clients should:
 - Treat all future content signed by the new key as belonging to the same identity as content previously signed by the old key.
 - Aggregate ratings and affinity across both keys' content for the purposes of trust graph computation.
 - Display a visual indicator that a rotation has occurred, with the timestamp, so users are aware the identity has a history under a different key.
+
+**Chains and competing rotations.** Rotations chain: if A rotates to B and B later rotates to C, content signed by any of the three belongs to one identity, whose current key is C. A client follows the chain until it ends or until it reaches a point it cannot follow unambiguously:
+- If valid declarations for the same `old_id` name **different** new identities, that identity is **contested**. A compromised old key can always issue a rotation of its own, so competing valid rotations are a real possibility, and nothing in this specification says which is right (see §8.2). Clients must not silently pick one: they should treat the identity as contested, merge nothing beyond the fork, and say so. Several declarations naming the *same* new identity are not a conflict, however each was authorized.
+- If the chain loops back on itself, it ends at the last identity before the repeat.
 
 A rotation declaration is itself content-addressed and should be propagated alongside the user's identity document.
 
@@ -320,22 +328,24 @@ If the primary key is lost but a sufficient quorum of recovery keys were registe
 ```
 
 Clients verify this declaration by:
-1. Checking that each `recovery_key` in `recovery_signatures` appears in the user's most recent identity document or prior rotation declaration.
-2. Verifying each recovery key's signature.
-3. Confirming that the number of valid recovery signatures meets or exceeds the registered `recovery_threshold` (defaulting to 1 if unset).
+1. Determining the recovery keys and threshold authorized for `old_id`: the `recovery_keys` and `recovery_threshold` of the identity document the client treats as authoritative for it (§8.1 explains why which document that is, is not obvious).
+2. Counting the **distinct** authorized recovery keys that have a valid signature among the `recovery_signatures`. An entry from a key that is not authorized, or whose signature does not verify, is *ignored* rather than invalidating the declaration — `recovery_signatures` is not covered by any signature, so a relay could append entries — and a key counts once however many times it is listed (otherwise one key listed twice would satisfy a threshold of 2).
+3. Confirming that this count meets or exceeds the `recovery_threshold` (defaulting to 1 if unset; it is never less than 1, §5.2).
 4. Verifying `new_signature` against the new primary key.
 
 If all checks pass, the rotation is valid and treated identically to a standard rotation.
 
 ### 6.3 Rotation Declaration Discovery
 
-When a client accesses an identity document, it should lazily check for rotation declarations associated with that identity. On IPFS/IPNS deployments, rotation declarations are published under the `/rotations/` path of the user's IPNS directory (see Section 5.3), with each declaration stored as a separate file named by its Unix timestamp:
+A rotation declaration is published under the `/rotations/` path of the **new** identity's IPNS directory (see Section 5.3), each declaration stored as a separate file named by its Unix timestamp:
 
 ```
-ipns://<user's IPNS name>/rotations/<timestamp>.json
+ipns://<new identity's IPNS name>/rotations/<timestamp>.json
 ```
 
-Clients that discover a rotation declaration should propagate it to peers alongside the identity document. The `/rotations/` directory listing serves as an index of all rotation declarations ever issued by that identity.
+It goes under the new identity because the new key is the one party that can always write there: after a recovery rotation the old key is lost by assumption, so the old identity's directory can no longer be updated. A standard rotation may *also* be published under the old identity's `/rotations/` directory before the old key is retired, which lets clients that still follow the old identity learn of it directly.
+
+When a client accesses an identity document, it should lazily check that identity's `/rotations/` directory, whose listing indexes every rotation declaration naming that identity as `new_id`. A client that follows only the *old* identity, and finds no declaration there, learns of a rotation by propagation instead: when it encounters the new identity (its content, its rating collection, an endorsement list) it reads that identity's `/rotations/` directory and thereby learns whom it succeeds, and clients should pin and gossip the rotation declarations of identities with positive affinity alongside their identity documents (§5.1). See §8.3.
 
 ---
 
@@ -353,6 +363,8 @@ An identity link record is:
 }
 ```
 
+The `signature` is made by the linking identity — the owner of the document the record appears in — over the JCS canonical form (identity.md §4.2) of `{ "linked_id", "timestamp" }`, so a record can be checked on its own as well as through its document's signature. An identity must not link to itself, and a document holds at most one record per linked identity.
+
 For a link to be considered verified, **both identities must have declared the link** — identity A must include a link to B, and B must include a link to A, each signed by their respective keys. A unilateral declaration is shown as unverified.
 
 Linking is entirely voluntary. The protocol has no mechanism to detect or reveal unlinked identities belonging to the same person.
@@ -369,3 +381,13 @@ Whether linked identities are treated as a single node or as distinct nodes in t
 - *Always treat separately*: treat all identities as distinct nodes regardless of owner preference
 
 This design ensures identity owners have meaningful control over their default presentation while preserving each user's ultimate sovereignty over their own trust graph computation.
+
+---
+
+## 8. Open Questions
+
+**8.1 Which identity document is authoritative for recovery keys?** A recovery rotation is authorized by the recovery keys registered for the old identity — but the identity document that registers them is itself signed by the primary key. A compromised primary key can therefore publish a new document naming recovery keys of the attacker's choosing and then "recover" the identity to itself; "the most recent identity document" is not a safe answer. One direction worth considering: a change to `recovery_keys` or `recovery_threshold` takes effect for *authorizing rotations* only after a grace period (for instance 14–30 days) from when clients first observe it, with the previous set remaining authoritative in the meantime — giving a legitimate owner time to notice and act with the original recovery keys. The reference implementation takes the authorized recovery set as an input to verification rather than choosing a policy.
+
+**8.2 Competing rotations.** A compromised primary key can issue a standard rotation to a key of the attacker's choosing, and the legitimate owner can answer with a recovery rotation: two valid declarations for the same `old_id`, naming different successors. Timestamps cannot arbitrate — they are self-reported, and an attacker can backdate. One direction: a recovery-authorized rotation outranks a standard one (recovery exists for precisely this case), while competing declarations of the same kind stay contested until the user resolves them. §6.1 currently requires only that clients not pick silently; the reference implementation reports the fork (`contested`) and leaves the policy to the client.
+
+**8.3 Finding a successor from the old identity alone.** Because a recovery rotation cannot be written under the old identity (§6.3), a client that tracks only the old identity and never encounters the new one has no direct way to learn of the rotation; it depends on propagation. Whether that is sufficient, or whether identity documents should carry a pointer to the identity they succeed (so that a client who meets the new identity can confirm and cross-check the claim), is open.

@@ -4,16 +4,22 @@ import {
   buildTrustGraphFromPosts,
   buildVersionHistory,
   computeTrustLevel,
+  createIdentityDocument,
   createPostMetadata,
   createRatingRecord,
+  createStandardRotation,
   derivedAffinity,
   effectivePostScore,
   encodeNid1,
   generateKeypair,
   normalizeTag,
+  resolveIdentityChain,
   signObject,
   validatePostMetadata,
+  verifyIdentityDocument,
+  verifyKeyRotation,
   verifyObject,
+  verifyPlatformBinding,
   type RatingRecord,
 } from '../src/index.js';
 
@@ -133,5 +139,42 @@ describe('README examples', () => {
       records,
     });
     expect(derivedAffinity(graph, carolId, bobId, 'user', { dimension: 'true' })).toBe(-1);
+  });
+  it('identity documents, platform binding, and key rotation', () => {
+    const alice = generateKeypair();
+    const aliceId = encodeNid1(alice.publicKey);
+
+    const doc = createIdentityDocument(
+      {
+        id: aliceId,
+        display_name: 'Alice',
+        links: [{ url: 'https://reddit.com/user/alice' }],
+        timestamp: 1_700_000_000,
+      },
+      alice.secretKey,
+    );
+    expect(verifyIdentityDocument(doc)).toBe(true);
+
+    // Her Reddit bio carries her key, and her document links back to the profile:
+    const binding = verifyPlatformBinding({
+      profileUrl: 'https://reddit.com/user/alice',
+      profileText: `Philosophy nerd. [neusnet:${aliceId}]`,
+      identityDocument: doc,
+    });
+    expect(binding).toEqual({ verified: true, id: aliceId });
+
+    // Later she moves to a new key; both keys sign the rotation.
+    const next = generateKeypair();
+    const nextId = encodeNid1(next.publicKey);
+    const rotation = createStandardRotation(
+      { timestamp: 1_700_100_000 },
+      alice.secretKey,
+      next.secretKey,
+    );
+    expect(verifyKeyRotation(rotation)).toBe(true);
+    expect(resolveIdentityChain(aliceId, [rotation])).toEqual({
+      currentId: nextId,
+      chain: [aliceId, nextId],
+    });
   });
 });

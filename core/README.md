@@ -1,11 +1,11 @@
 # neusnet-core
 
 A reference implementation of the core, substrate-independent primitives of
-the [neusnet protocol](../README.md): identity and signing, canonical JSON,
-tag normalization, post metadata, rating records, the trust graph
-(affinity and effective scores), and rating aggregation across post
-versions — with more to come (see [PROGRESS.md](PROGRESS.md) for what's
-implemented so far and what's next).
+the [neusnet protocol](../README.md): identity (documents, linking, platform
+binding, key rotation) and signing, canonical JSON, tag normalization, post
+metadata, rating records, the trust graph (affinity and effective scores),
+and rating aggregation across post versions — with more to come (see
+[PROGRESS.md](PROGRESS.md) for what's implemented so far and what's next).
 
 This package has no network, storage, or UI code in it. It's the
 deterministic, pure-logic foundation everything else — a CLI, a web
@@ -112,6 +112,64 @@ can be used directly as a filter over untrusted data from the network:
 ```ts
 const validRecords = untrustedRecords.filter((r) => verifyObject(r, authorKey));
 ```
+
+### Identity documents, platform binding, and key rotation (identity.md §5–§7)
+
+```ts
+import {
+  createIdentityDocument,
+  verifyIdentityDocument,
+  verifyPlatformBinding,
+  createStandardRotation,
+  verifyKeyRotation,
+  resolveIdentityChain,
+} from 'neusnet-core';
+
+const doc = createIdentityDocument(
+  {
+    id: aliceId,
+    display_name: 'Alice',
+    links: [{ url: 'https://reddit.com/user/alice' }],
+    timestamp: 1_700_000_000,
+  },
+  alice.secretKey,
+);
+verifyIdentityDocument(doc); // => true
+
+// Her Reddit bio carries her key, and her document links back to the profile:
+verifyPlatformBinding({
+  profileUrl: 'https://reddit.com/user/alice',
+  profileText: `Philosophy nerd. [neusnet:${aliceId}]`, // text *she* controls
+  identityDocument: doc,
+}); // => { verified: true, id: aliceId }
+
+// Later she moves to a new key; both keys sign the rotation.
+const rotation = createStandardRotation(
+  { timestamp: 1_700_100_000 },
+  alice.secretKey,
+  next.secretKey,
+);
+verifyKeyRotation(rotation); // => true
+resolveIdentityChain(aliceId, [rotation]); // => { currentId: nextId, chain: [aliceId, nextId] }
+```
+
+A few things worth knowing:
+
+- **Platform binding needs both directions.** A key in a bio with no matching
+  `links` entry (or the reverse) is just a claim; `verifyPlatformBinding`
+  says which half is missing. Only pass it text the account's owner
+  controls — a token typed into someone else's reply proves nothing.
+- **Recovery rotations** (`createRecoveryRotation`) need the registered
+  recovery keys and threshold passed to `verifyKeyRotation` as
+  `{ recovery: { keys, threshold } }`. Each recovery key counts once, and
+  entries from unregistered keys are ignored rather than fatal.
+- **Forks are reported, not resolved.** If two valid rotations name
+  different successors for one identity, `resolveIdentityChain` stops there
+  and returns `contested` with the candidates — the protocol doesn't say
+  which is right (identity.md §8.2), so that decision is the client's.
+- Identity documents for non-native substrates (AT Protocol DIDs, Nostr
+  keys...) work too; pass your own `verify` function wherever signatures
+  are checked.
 
 ### Tag normalization and search (ratings.md §6.1–§6.3)
 
