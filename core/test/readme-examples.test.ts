@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyIdentityMapping,
   buildTrustGraph,
   buildTrustGraphFromPosts,
+  computeIdentityMapping,
+  computeLinkedClusters,
   buildVersionHistory,
   computeTrustLevel,
   createIdentityDocument,
+  createIdentityLink,
   createPostMetadata,
   createRatingRecord,
   createStandardRotation,
@@ -176,5 +180,59 @@ describe('README examples', () => {
       currentId: nextId,
       chain: [aliceId, nextId],
     });
+  });
+  it('linked-identity aggregation', () => {
+    const alice1 = generateKeypair();
+    const alice2 = generateKeypair(); // Alice's second identity
+    const viewer = generateKeypair();
+    const alice1Id = encodeNid1(alice1.publicKey);
+    const alice2Id = encodeNid1(alice2.publicKey);
+    const viewerId = encodeNid1(viewer.publicKey);
+
+    // Alice links her two identities, and prefers them aggregated.
+    const docs = [
+      createIdentityDocument(
+        {
+          id: alice1Id,
+          timestamp: 1,
+          aggregate_linked: true,
+          linked_ids: [createIdentityLink({ linked_id: alice2Id, timestamp: 1 }, alice1.secretKey)],
+        },
+        alice1.secretKey,
+      ),
+      createIdentityDocument(
+        {
+          id: alice2Id,
+          timestamp: 1,
+          linked_ids: [createIdentityLink({ linked_id: alice1Id, timestamp: 1 }, alice2.secretKey)],
+        },
+        alice2.secretKey,
+      ),
+    ];
+
+    const clusters = computeLinkedClusters(docs);
+    const mapping = computeIdentityMapping(clusters, 'respect-owner');
+
+    // The viewer only ever rated something by alice1...
+    const records = [
+      {
+        neusnet_version: 1 as const,
+        type: 'rating' as const,
+        rater: viewerId,
+        item: 'post:by-alice1',
+        item_type: 'post' as const,
+        ratings: { true: 1 },
+        timestamp: 1,
+        public: true,
+      },
+    ];
+    const posts = new Map([['post:by-alice1', { author: alice1Id, tags: [] }]]);
+
+    // ...but once aggregated, that builds affinity with alice2 too.
+    const { records: r2, posts: p2 } = applyIdentityMapping({ records, posts, mapping });
+    const graph = buildTrustGraph({ records: r2, posts: p2 });
+    expect(
+      derivedAffinity(graph, viewerId, mapping.get(alice2Id)!, 'user', { dimension: 'true' }),
+    ).toBe(1);
   });
 });

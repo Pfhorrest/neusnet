@@ -299,6 +299,30 @@ the box; for other identity substrates, pass your own `isAuthorSigned`.
 `test/ratings/aggregate.test.ts` is the best worked reference for the
 edge cases (skipped versions, introductions, rival claims, bridged posts).
 
+### Linked-identity aggregation (identity.md §7.1)
+
+```ts
+import { computeLinkedClusters, computeIdentityMapping, applyIdentityMapping } from 'neusnet-core';
+
+// Alice's two identities, mutually linked, with alice1 preferring aggregation.
+const clusters = computeLinkedClusters([alice1Doc, alice2Doc]);
+const mapping = computeIdentityMapping(clusters, 'respect-owner'); // or 'always-aggregate' / 'always-separate'
+
+// Remap before building the graph — trust-graph.ts itself never changes.
+const { records: r2, posts: p2 } = applyIdentityMapping({ records, posts, mapping });
+const graph = buildTrustGraph({ records: r2, posts: p2 });
+```
+
+`computeLinkedClusters` only counts identities with a _mutual, verified_
+link — connected components of the mutual-link graph, so A, B, and C end up
+in one cluster if A↔B and B↔C each verify, even if A and C never declared
+each other. `computeIdentityMapping` applies the viewer's own preference
+(Layer 2) on top of whatever the owner(s) declared (Layer 1, `aggregate_linked`
+on any member) — `'respect-owner'` is the default client behavior
+identity.md §7.1 describes. The three functions are deliberately separate:
+inspect `clusters` on its own to show a user their link graph, independent
+of what mode is currently chosen.
+
 ### Canonicalization and encoding (lower-level, used internally)
 
 `src/canonicalization/jcs.ts` and `src/encoding/{base58,base64url}.ts` are

@@ -8,15 +8,13 @@ read this whole file before writing any code — it also records decisions
 you shouldn't need to re-litigate.
 
 **Last updated:** this entry was written during the session that added
-identity documents and link records (identity.md §5, §7), external
-platform binding (§2.2), and key rotation with recovery quorums (§6) — and
-that revised identity.md substantially, including fixing a hole that would
-have made recovery rotations unpublishable (see "Spec revisions made
-during the identity work" below).
+linked-identity aggregation (identity.md §7.1) — clustering, the two-layer
+preference model, and remapping rating data so `trust-graph.ts` treats a
+linked cluster as one node, without changing that module at all.
 
 ## Current state at a glance
 
-- **550 tests, all passing.** `npm test` is green.
+- **578 tests, all passing.** `npm test` is green.
 - **~99.8% statement coverage, ~98% branch coverage, 100%
   functions/lines** across every implemented module — remaining gaps are
   small branch-level edge permutations with real diminishing returns. A
@@ -58,6 +56,7 @@ regressed before doing anything else, if you're resuming this.
 | Content identity                         | `src/metadata/content-identity.ts`           | metadata.md §4.3     | Immutable URI / hash / inline-text matching; a mutable URI never confirms identity alone                                                                               |
 | Canonical version history                | `src/metadata/version-history.ts`            | metadata.md §5.2     | Walks `previous`, finds the canonical author, categorizes every other known file; author-signature check is injectable for non-native substrates                       |
 | Cross-version rating aggregation         | `src/ratings/aggregate.ts`                   | ratings.md §2.5      | One rating per rater per post; `buildTrustGraphFromPosts` wires metadata + records into a `TrustGraph`                                                                 |
+| Linked-identity aggregation              | `src/identity/linked-clusters.ts`            | identity.md §7.1     | Pure pre-processing in front of `trust-graph.ts` (unchanged): cluster, resolve the viewer's mode, remap, then build the graph normally                                 |
 | Identity documents + link records        | `src/identity/identity-document.ts`          | identity.md §5, §7   | Validation, native signing, mutual-link verification; `signing.ts` gained the shared `SignatureVerifier`/`verifyNativeSignature`                                       |
 | External platform binding                | `src/identity/platform-binding.ts`           | identity.md §2.2     | Pure half only: token extraction + both-directions check; the caller fetches profiles and documents                                                                    |
 | Key rotation (standard + recovery)       | `src/identity/rotation.ts`                   | identity.md §6       | Per-declaration verification, plus `resolveIdentityChain`, which _reports_ forks as `contested` rather than choosing                                                   |
@@ -77,13 +76,7 @@ implementation deferral.
 
 Roughly in priority order (matches dependency order):
 
-1. **Linked-identity aggregation** (identity.md §7.1) — the two-layer
-   preference model (`aggregate_linked` on the owner's side, a viewer
-   override) for treating mutually-linked identities as one node in the
-   trust graph. The verification half (`verifyMutualLink`) exists; the
-   graph-side merging does not, and needs `linkedClusters` (connected
-   components of the mutual-link graph) first.
-2. **Channels** (ratings.md §6.4–§6.6) — this is more client-shaped logic
+1. **Channels** (ratings.md §6.4–§6.6) — this is more client-shaped logic
    (local taxonomy, suggestion generation) than pure protocol-object
    validation; worth deciding whether it belongs in this package at all
    or in a future client-facing package, given CONTRIBUTING.md's scope
@@ -94,7 +87,7 @@ Roughly in priority order (matches dependency order):
    logic) probably don't, since they're explicitly non-normative client
    recommendations, not protocol requirements. Revisit when actually
    building this.
-3. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
+2. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
    Mechanical now that post metadata exists (reuses the same patterns —
    `src/metadata/post.ts` is a good template to follow).
 
@@ -193,6 +186,32 @@ provably unreachable (upstream invariants — `compositeAffinitiesOf`'s
 Map-based dedup and an earlier guard in the same loop — already
 guarantee what they checked). Deleting provably-dead code beats
 contriving a test that has to break the invariant to exercise it.
+
+## Linked-identity aggregation: what to know before touching it
+
+- **The core trust graph algorithm was not touched.** Aggregation is a
+  pre-processing step: compute clusters from identity documents, resolve
+  the viewer's mode into an id→canonical-id mapping, remap `rater` and
+  (for `item_type: 'user'`) `item` on rating records and `author` on
+  `PostInfo`, then call `buildTrustGraph` exactly as before. This keeps the
+  heavily-verified traversal code (see its own section above) unchanged
+  while still merging a cluster into one node — a rater, an author, and an
+  affinity target all become the same thing once remapped.
+- **Clusters are connected components, not cliques.** identity.md §7.1 says
+  "if any identity in a mutually-verified cluster..." without fully
+  specifying the graph structure; requiring every pair among N linked
+  identities to separately declare each other (O(N²) link records) seemed
+  clearly impractical, so transitive grouping was chosen and the spec text
+  now says so explicitly.
+- **Three separate functions, not one.** `computeLinkedClusters` (the
+  facts: who's linked, and the owner-side preference) is kept apart from
+  `computeIdentityMapping` (the viewer's mode applied on top) and
+  `applyIdentityMapping` (actually remapping data), so a client can show a
+  user their link graph independent of whichever mode is currently active.
+- **`item_type` still disambiguates during remapping.** A rating's `item`
+  is only remapped when `item_type === 'user'` — a `post` or `tag` item is
+  left alone even if its string happens to match a mapped identity, same
+  principle as elsewhere in this codebase (ratings.md §2.1).
 
 ## Identity: what to know before touching it
 

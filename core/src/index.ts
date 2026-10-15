@@ -51,6 +51,14 @@ export {
   type VerifyPlatformBindingInput,
 } from './identity/platform-binding.js';
 export {
+  applyIdentityMapping,
+  computeIdentityMapping,
+  computeLinkedClusters,
+  type AggregationMode,
+  type ApplyIdentityMappingInput,
+  type LinkedCluster,
+} from './identity/linked-clusters.js';
+export {
   createRecoveryRotation,
   createStandardRotation,
   isValidKeyRotation,
