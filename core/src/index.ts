@@ -141,6 +141,18 @@ export {
   type TrustGraph,
 } from './ratings/trust-graph.js';
 export {
+  createChannel,
+  discoverTopLevelTags,
+  matchesChannel,
+  postMatchesChannel,
+  suggestCrossHierarchyInclusions,
+  type Channel,
+  type CreateChannelOptions,
+  type DiscoverTopLevelTagsOptions,
+  type SuggestOptions,
+  type SuggestionCandidate,
+} from './ratings/channels.js';
+export {
   aggregatePostRatings,
   buildTrustGraphFromPosts,
   type AggregatePostRatingsInput,

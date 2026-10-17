@@ -8,13 +8,13 @@ read this whole file before writing any code — it also records decisions
 you shouldn't need to re-litigate.
 
 **Last updated:** this entry was written during the session that added
-linked-identity aggregation (identity.md §7.1) — clustering, the two-layer
-preference model, and remapping rating data so `trust-graph.ts` treats a
-linked cluster as one node, without changing that module at all.
+channels (ratings.md §6.4–§6.6) — the last item that was explicitly on the
+list. Every module named in the original scope (identity, metadata,
+ratings, trust graph, channels) now has an implementation.
 
 ## Current state at a glance
 
-- **578 tests, all passing.** `npm test` is green.
+- **615 tests, all passing.** `npm test` is green.
 - **~99.8% statement coverage, ~98% branch coverage, 100%
   functions/lines** across every implemented module — remaining gaps are
   small branch-level edge permutations with real diminishing returns. A
@@ -56,6 +56,7 @@ regressed before doing anything else, if you're resuming this.
 | Content identity                         | `src/metadata/content-identity.ts`           | metadata.md §4.3     | Immutable URI / hash / inline-text matching; a mutable URI never confirms identity alone                                                                               |
 | Canonical version history                | `src/metadata/version-history.ts`            | metadata.md §5.2     | Walks `previous`, finds the canonical author, categorizes every other known file; author-signature check is injectable for non-native substrates                       |
 | Cross-version rating aggregation         | `src/ratings/aggregate.ts`                   | ratings.md §2.5      | One rating per rater per post; `buildTrustGraphFromPosts` wires metadata + records into a `TrustGraph`                                                                 |
+| Channels                                 | `src/ratings/channels.ts`                    | ratings.md §6.4–§6.6 | Client-local only (never signed/published, per §6.4) — matching + suggestion algorithms as pure functions, no validator                                                |
 | Linked-identity aggregation              | `src/identity/linked-clusters.ts`            | identity.md §7.1     | Pure pre-processing in front of `trust-graph.ts` (unchanged): cluster, resolve the viewer's mode, remap, then build the graph normally                                 |
 | Identity documents + link records        | `src/identity/identity-document.ts`          | identity.md §5, §7   | Validation, native signing, mutual-link verification; `signing.ts` gained the shared `SignatureVerifier`/`verifyNativeSignature`                                       |
 | External platform binding                | `src/identity/platform-binding.ts`           | identity.md §2.2     | Pure half only: token extraction + both-directions check; the caller fetches profiles and documents                                                                    |
@@ -76,18 +77,7 @@ implementation deferral.
 
 Roughly in priority order (matches dependency order):
 
-1. **Channels** (ratings.md §6.4–§6.6) — this is more client-shaped logic
-   (local taxonomy, suggestion generation) than pure protocol-object
-   validation; worth deciding whether it belongs in this package at all
-   or in a future client-facing package, given CONTRIBUTING.md's scope
-   note that this package is protocol-object logic, not client behavior.
-   Leaning toward: the _data structure_ (a channel's root tag + local
-   taxonomy as a plain object) belongs here; the _suggestion-generation
-   heuristics_ (ratings.md §6.5's cross-hierarchy suggestion
-   logic) probably don't, since they're explicitly non-normative client
-   recommendations, not protocol requirements. Revisit when actually
-   building this.
-2. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
+1. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
    Mechanical now that post metadata exists (reuses the same patterns —
    `src/metadata/post.ts` is a good template to follow).
 
@@ -186,6 +176,38 @@ provably unreachable (upstream invariants — `compositeAffinitiesOf`'s
 Map-based dedup and an earlier guard in the same loop — already
 guarantee what they checked). Deleting provably-dead code beats
 contriving a test that has to break the invariant to exercise it.
+
+## Channels: what to know before touching it
+
+- **No validator, no wire schema — and that's correct, not an oversight.**
+  ratings.md §6.4 calls a channel "a private taxonomic assertion that
+  affects only their own view"; it is never signed or published. Every
+  other object in this library (`PostMetadata`, `RatingRecord`,
+  `IdentityDocument`...) has a `validateX`/`isValidX` pair because it
+  crosses the wire; `Channel` doesn't, so it doesn't.
+- **Matching composes directly with `tags.ts`**, unchanged:
+  `matchesChannel` is `matchesTagQuery(tag, rootTag)` (the ordinary prefix
+  rule — no taxonomy entry needed for `#philosophy.epistemology` to match a
+  `#philosophy` channel) `||` a local-taxonomy component matching anywhere
+  (the same non-exact `matchesTagQuery` semantics, applied to each entry).
+- **Suggestions extract the _immediate_ child only**, however much deeper
+  the observed tag goes — `#philosophy.epistemology.reliabilism` suggests
+  `epistemology`, never `reliabilism` — since a confirmed `epistemology`
+  subchannel already reaches the deeper tag through the ordinary prefix
+  rule. This wasn't obvious from the spec's single two-level example, and
+  the first implementation got it wrong (required an _exact_ one-level
+  child, so a three-level observed tag silently produced zero suggestions);
+  a test using a three-level tag catches a regression here. ratings.md
+  §6.5 now says this explicitly.
+- **The disclosure field is generated, not left to the caller**, because
+  §6.5 treats accurate scope disclosure as a requirement ("the client
+  cannot know whether the suggestion is a good one"), not a UI nicety.
+- **`corpus` carries no affinity information** — every function here takes
+  a plain tag-lists-per-post array and assumes the _caller_ already
+  filtered it to trusted content, exactly like the version-aggregation
+  module's `known` map takes already-validated data. Composing with
+  `effectiveAffinity` to build that filter is the caller's job and is
+  shown in the README, not reimplemented here.
 
 ## Linked-identity aggregation: what to know before touching it
 

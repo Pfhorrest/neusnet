@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   applyIdentityMapping,
   buildTrustGraph,
+  createChannel,
+  matchesChannel,
+  postMatchesChannel,
+  suggestCrossHierarchyInclusions,
   buildTrustGraphFromPosts,
   computeIdentityMapping,
   computeLinkedClusters,
@@ -234,5 +238,20 @@ describe('README examples', () => {
     expect(
       derivedAffinity(graph, viewerId, mapping.get(alice2Id)!, 'user', { dimension: 'true' }),
     ).toBe(1);
+  });
+  it('channels', () => {
+    const channel = createChannel('philosophy');
+    expect(matchesChannel('philosophy.epistemology', channel)).toBe(true); // ordinary prefix rule
+    expect(postMatchesChannel(['cooking', 'philosophy.logic'], channel)).toBe(true);
+
+    // People you trust tag things #philosophy.epistemology; #epistemology
+    // also exists elsewhere (bare, or under #psychology) in that corpus.
+    const corpus = [['philosophy.epistemology'], ['psychology.epistemology']];
+    const [suggestion] = suggestCrossHierarchyInclusions(channel, corpus);
+    expect(suggestion?.component).toBe('epistemology');
+    expect(suggestion?.disclosure).toContain('anywhere');
+
+    const widerChannel = createChannel('philosophy', { localTaxonomy: [suggestion!.component] });
+    expect(matchesChannel('psychology.epistemology', widerChannel)).toBe(true);
   });
 });

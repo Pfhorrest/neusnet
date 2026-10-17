@@ -72,6 +72,11 @@ describe('public API (src/index.ts)', () => {
     'effectiveAffinity',
     'effectivePostScore',
     'meetsVisibilityThreshold',
+    'createChannel',
+    'discoverTopLevelTags',
+    'matchesChannel',
+    'postMatchesChannel',
+    'suggestCrossHierarchyInclusions',
     'aggregatePostRatings',
     'buildTrustGraphFromPosts',
   ] as const;

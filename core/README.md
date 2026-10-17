@@ -299,6 +299,42 @@ the box; for other identity substrates, pass your own `isAuthorSigned`.
 `test/ratings/aggregate.test.ts` is the best worked reference for the
 edge cases (skipped versions, introductions, rival claims, bridged posts).
 
+### Channels (ratings.md §6.4–§6.6)
+
+Unlike everything else in this library, a channel is never signed or
+published — it's purely client-local state (ratings.md §6.4 is explicit
+about this). What's implemented here are the matching and suggestion
+algorithms §6.4–§6.5 describe as pure functions:
+
+```ts
+import {
+  createChannel,
+  matchesChannel,
+  postMatchesChannel,
+  suggestCrossHierarchyInclusions,
+} from 'neusnet-core';
+
+const channel = createChannel('philosophy'); // + optional { localTaxonomy, displayName }
+matchesChannel('philosophy.epistemology', channel); // => true — the ordinary prefix rule, no taxonomy needed
+postMatchesChannel(['cooking', 'philosophy.logic'], channel); // => true
+
+// People you trust tag things #philosophy.epistemology; #epistemology also
+// exists elsewhere (bare, or under #psychology) in that same (caller-filtered,
+// already trust-weighted) corpus:
+const corpus = [['philosophy.epistemology'], ['psychology.epistemology']];
+const [suggestion] = suggestCrossHierarchyInclusions(channel, corpus);
+// => { component: 'epistemology', observedUnderRoot: [...], observedElsewhere: [...], disclosure: '...' }
+```
+
+`corpus` is each post's tag list, already filtered by the caller to
+whatever counts as trusted content — this module has no notion of
+affinity itself; compose it with `effectiveAffinity` from `trust-graph.ts`.
+`suggestion.disclosure` states the suggestion's exact scope in words,
+since §6.5 requires that: the library can't tell a good suggestion
+(`#epistemology`) from an overly broad one (`#basement`) — only the user
+can. Also exported: `discoverTopLevelTags`, for a personal "browse by
+topic" index ranked by frequency across the same kind of corpus.
+
 ### Linked-identity aggregation (identity.md §7.1)
 
 ```ts
