@@ -3,6 +3,9 @@ import {
   applyIdentityMapping,
   buildTrustGraph,
   createChannel,
+  createEndorsementList,
+  deriveIpnsName,
+  endorsementListPath,
   matchesChannel,
   postMatchesChannel,
   suggestCrossHierarchyInclusions,
@@ -253,5 +256,24 @@ describe('README examples', () => {
 
     const widerChannel = createChannel('philosophy', { localTaxonomy: [suggestion!.component] });
     expect(matchesChannel('psychology.epistemology', widerChannel)).toBe(true);
+  });
+  it('IPNS name derivation and endorsement lists', () => {
+    const alice = generateKeypair();
+    const aliceId = encodeNid1(alice.publicKey);
+    const ipnsName = deriveIpnsName(alice.publicKey);
+    expect(ipnsName.startsWith('k')).toBe(true);
+    expect(endorsementListPath(ipnsName)).toBe(`ipns://${ipnsName}/endorsements.json`);
+
+    const list = createEndorsementList(
+      {
+        owner: aliceId,
+        generated: 1_700_002_000,
+        entries: [
+          { id: 'ipns://k51post', version_id: 'ipfs://bafyversion1', pinned_at: 1_700_001_000 },
+        ],
+      },
+      alice.secretKey,
+    );
+    expect(list.entries).toHaveLength(1);
   });
 });

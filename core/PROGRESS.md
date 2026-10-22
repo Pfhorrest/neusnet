@@ -8,13 +8,14 @@ read this whole file before writing any code — it also records decisions
 you shouldn't need to re-litigate.
 
 **Last updated:** this entry was written during the session that added
-channels (ratings.md §6.4–§6.6) — the last item that was explicitly on the
-list. Every module named in the original scope (identity, metadata,
-ratings, trust graph, channels) now has an implementation.
+endorsement lists (hosting.md §8.1) — and, picking up a gap flagged as far
+back as the first identity.md session, the actual IPNS name derivation
+(identity.md §5.3) that endorsement lists, identity documents, and
+rotation declarations all reference but nothing could previously compute.
 
 ## Current state at a glance
 
-- **615 tests, all passing.** `npm test` is green.
+- **668 tests, all passing.** `npm test` is green.
 - **~99.8% statement coverage, ~98% branch coverage, 100%
   functions/lines** across every implemented module — remaining gaps are
   small branch-level edge permutations with real diminishing returns. A
@@ -38,30 +39,33 @@ regressed before doing anything else, if you're resuming this.
 
 ## Implemented and fully tested
 
-| Module                                   | File                                         | Spec section         | Notes                                                                                                                                                                  |
-| ---------------------------------------- | -------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| base64url encoding                       | `src/encoding/base64url.ts`                  | identity.md §4.3     | Portable (no `Buffer`); RFC 4648 §5, no padding                                                                                                                        |
-| Base58 (Bitcoin alphabet)                | `src/encoding/base58.ts`                     | identity.md §2       | Alphabet is a literal constant copied from the spec, not trusted from a third-party package                                                                            |
-| JCS canonicalization                     | `src/canonicalization/jcs.ts`                | identity.md §4.2     | Wraps the `canonicalize` npm package (RFC 8785's own editor's implementation) rather than hand-rolling number serialization                                            |
-| Ed25519 keypairs + `nid1` IDs            | `src/identity/keypair.ts`                    | identity.md §2–§3    | Wraps `@noble/ed25519` v3's sync API, wired to `@noble/hashes`' sha512                                                                                                 |
-| Sign/verify                              | `src/identity/signing.ts`                    | identity.md §4       | `verifyObject` never throws — returns `false` on any malformed input, by design, so it composes as a filter over untrusted data                                        |
-| Tag normalization (flat + hierarchical)  | `src/ratings/tags.ts`                        | ratings.md §6.1–§6.2 | See "Spec ambiguities resolved" below — several real judgment calls were needed here                                                                                   |
-| Tag search semantics                     | `src/ratings/tags.ts` (`matchesTagQuery`)    | ratings.md §6.3      | Single-component queries match at any depth; multi-component queries match only as a root-anchored prefix — this asymmetry is deliberate and spec-confirmed, not a bug |
-| Content references                       | `src/metadata/content-reference.ts`          | metadata.md §4       | `uri`/`mime_type`/`size`/`hash`/`inline_content`; `inline_content` required iff `uri === 'inline:'`, forbidden otherwise                                               |
-| Post metadata (validate/create)          | `src/metadata/post.ts`                       | metadata.md §3       | Field names match the wire format exactly (snake_case), not idiomatic camelCase — see "Decisions made" below                                                           |
-| Post trust level                         | `src/metadata/post.ts` (`computeTrustLevel`) | metadata.md §6.1     | Caller must supply the actual signer key (Ed25519 signatures don't embed it); verifies before classifying, never trusts the caller's claim blindly                     |
-| Rating records (validate/create)         | `src/ratings/rating-record.ts`               | ratings.md §2.1      | `ratings` is `Record<string, number>`, open dimension names (§1.2 allows community-defined ones); `supersedes()` implements §2.3's update/retraction rule              |
-| Rating collection wrapper                | `src/ratings/rating-collection.ts`           | ratings.md §7        | `records`/`cached` arrays, each entry validated via rating-record.ts                                                                                                   |
-| Trust graph: affinity + effective scores | `src/ratings/trust-graph.ts`                 | ratings.md §3–§5     | The mathematical core — see its own section below, this is not a "just reads the spec" module                                                                          |
-| Content identity                         | `src/metadata/content-identity.ts`           | metadata.md §4.3     | Immutable URI / hash / inline-text matching; a mutable URI never confirms identity alone                                                                               |
-| Canonical version history                | `src/metadata/version-history.ts`            | metadata.md §5.2     | Walks `previous`, finds the canonical author, categorizes every other known file; author-signature check is injectable for non-native substrates                       |
-| Cross-version rating aggregation         | `src/ratings/aggregate.ts`                   | ratings.md §2.5      | One rating per rater per post; `buildTrustGraphFromPosts` wires metadata + records into a `TrustGraph`                                                                 |
-| Channels                                 | `src/ratings/channels.ts`                    | ratings.md §6.4–§6.6 | Client-local only (never signed/published, per §6.4) — matching + suggestion algorithms as pure functions, no validator                                                |
-| Linked-identity aggregation              | `src/identity/linked-clusters.ts`            | identity.md §7.1     | Pure pre-processing in front of `trust-graph.ts` (unchanged): cluster, resolve the viewer's mode, remap, then build the graph normally                                 |
-| Identity documents + link records        | `src/identity/identity-document.ts`          | identity.md §5, §7   | Validation, native signing, mutual-link verification; `signing.ts` gained the shared `SignatureVerifier`/`verifyNativeSignature`                                       |
-| External platform binding                | `src/identity/platform-binding.ts`           | identity.md §2.2     | Pure half only: token extraction + both-directions check; the caller fetches profiles and documents                                                                    |
-| Key rotation (standard + recovery)       | `src/identity/rotation.ts`                   | identity.md §6       | Per-declaration verification, plus `resolveIdentityChain`, which _reports_ forks as `contested` rather than choosing                                                   |
-| Package entry point                      | `src/index.ts`                               | —                    | Re-exports the public API; `test/index.test.ts` pins the export surface, and the built `dist/` was verified importable in plain Node                                   |
+| Module                                   | File                                         | Spec section           | Notes                                                                                                                                                                                                                     |
+| ---------------------------------------- | -------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| base64url encoding                       | `src/encoding/base64url.ts`                  | identity.md §4.3       | Portable (no `Buffer`); RFC 4648 §5, no padding                                                                                                                                                                           |
+| Base58 (Bitcoin alphabet)                | `src/encoding/base58.ts`                     | identity.md §2         | Alphabet is a literal constant copied from the spec, not trusted from a third-party package                                                                                                                               |
+| JCS canonicalization                     | `src/canonicalization/jcs.ts`                | identity.md §4.2       | Wraps the `canonicalize` npm package (RFC 8785's own editor's implementation) rather than hand-rolling number serialization                                                                                               |
+| Ed25519 keypairs + `nid1` IDs            | `src/identity/keypair.ts`                    | identity.md §2–§3      | Wraps `@noble/ed25519` v3's sync API, wired to `@noble/hashes`' sha512                                                                                                                                                    |
+| Sign/verify                              | `src/identity/signing.ts`                    | identity.md §4         | `verifyObject` never throws — returns `false` on any malformed input, by design, so it composes as a filter over untrusted data                                                                                           |
+| Tag normalization (flat + hierarchical)  | `src/ratings/tags.ts`                        | ratings.md §6.1–§6.2   | See "Spec ambiguities resolved" below — several real judgment calls were needed here                                                                                                                                      |
+| Tag search semantics                     | `src/ratings/tags.ts` (`matchesTagQuery`)    | ratings.md §6.3        | Single-component queries match at any depth; multi-component queries match only as a root-anchored prefix — this asymmetry is deliberate and spec-confirmed, not a bug                                                    |
+| Content references                       | `src/metadata/content-reference.ts`          | metadata.md §4         | `uri`/`mime_type`/`size`/`hash`/`inline_content`; `inline_content` required iff `uri === 'inline:'`, forbidden otherwise                                                                                                  |
+| Post metadata (validate/create)          | `src/metadata/post.ts`                       | metadata.md §3         | Field names match the wire format exactly (snake_case), not idiomatic camelCase — see "Decisions made" below                                                                                                              |
+| Post trust level                         | `src/metadata/post.ts` (`computeTrustLevel`) | metadata.md §6.1       | Caller must supply the actual signer key (Ed25519 signatures don't embed it); verifies before classifying, never trusts the caller's claim blindly                                                                        |
+| Rating records (validate/create)         | `src/ratings/rating-record.ts`               | ratings.md §2.1        | `ratings` is `Record<string, number>`, open dimension names (§1.2 allows community-defined ones); `supersedes()` implements §2.3's update/retraction rule                                                                 |
+| Rating collection wrapper                | `src/ratings/rating-collection.ts`           | ratings.md §7          | `records`/`cached` arrays, each entry validated via rating-record.ts                                                                                                                                                      |
+| Trust graph: affinity + effective scores | `src/ratings/trust-graph.ts`                 | ratings.md §3–§5       | The mathematical core — see its own section below, this is not a "just reads the spec" module                                                                                                                             |
+| Content identity                         | `src/metadata/content-identity.ts`           | metadata.md §4.3       | Immutable URI / hash / inline-text matching; a mutable URI never confirms identity alone                                                                                                                                  |
+| Canonical version history                | `src/metadata/version-history.ts`            | metadata.md §5.2       | Walks `previous`, finds the canonical author, categorizes every other known file; author-signature check is injectable for non-native substrates                                                                          |
+| Cross-version rating aggregation         | `src/ratings/aggregate.ts`                   | ratings.md §2.5        | One rating per rater per post; `buildTrustGraphFromPosts` wires metadata + records into a `TrustGraph`                                                                                                                    |
+| IPNS name derivation + well-known paths  | `src/identity/ipns.ts`                       | identity.md §5.3, §6.3 | Pure computation (libp2p peer-ID-as-CIDv1, base36) — the one IPFS/libp2p-specific piece in an otherwise substrate-agnostic library; verified against an independently-sourced worked example, not implemented from memory |
+| base36 encoding                          | `src/encoding/base36.ts`                     | —                      | Reuses the existing `base-x` dependency, same pattern as base58                                                                                                                                                           |
+| Endorsement lists                        | `src/hosting/endorsement-list.ts`            | hosting.md §8.1        | First module under `src/hosting/`; standard validate/create/verify shape, matching `identity-document.ts` and `post.ts`                                                                                                   |
+| Channels                                 | `src/ratings/channels.ts`                    | ratings.md §6.4–§6.6   | Client-local only (never signed/published, per §6.4) — matching + suggestion algorithms as pure functions, no validator                                                                                                   |
+| Linked-identity aggregation              | `src/identity/linked-clusters.ts`            | identity.md §7.1       | Pure pre-processing in front of `trust-graph.ts` (unchanged): cluster, resolve the viewer's mode, remap, then build the graph normally                                                                                    |
+| Identity documents + link records        | `src/identity/identity-document.ts`          | identity.md §5, §7     | Validation, native signing, mutual-link verification; `signing.ts` gained the shared `SignatureVerifier`/`verifyNativeSignature`                                                                                          |
+| External platform binding                | `src/identity/platform-binding.ts`           | identity.md §2.2       | Pure half only: token extraction + both-directions check; the caller fetches profiles and documents                                                                                                                       |
+| Key rotation (standard + recovery)       | `src/identity/rotation.ts`                   | identity.md §6         | Per-declaration verification, plus `resolveIdentityChain`, which _reports_ forks as `contested` rather than choosing                                                                                                      |
+| Package entry point                      | `src/index.ts`                               | —                      | Re-exports the public API; `test/index.test.ts` pins the export surface, and the built `dist/` was verified importable in plain Node                                                                                      |
 
 Post metadata scope note: schema validation, creation/signing, and
 trust-level classification are done. **Not** done: canonical version
@@ -75,19 +79,17 @@ implementation deferral.
 
 ## Not started yet
 
-Roughly in priority order (matches dependency order):
-
-1. **Endorsement lists** (hosting.md §8.1) — schema, creation, signing.
-   Mechanical now that post metadata exists (reuses the same patterns —
-   `src/metadata/post.ts` is a good template to follow).
-
-Explicitly **not** planned for this package at all (see CONTRIBUTING.md
-"Scope"): anything involving actual IPFS/IPNS network calls, hosting,
-gossip/pubsub, or a client UI. Those are future, separate packages once
-this core is solid. hosting.md's IPNS derivation formula (§5.3's
-protobuf → multihash → CIDv1 steps) is a plausible exception worth
-reconsidering — it's pure computation (no network I/O), so it might
-belong here after all, just lower priority than the list above.
+Nothing is currently on the explicit list — every module named in the
+original scope (identity, metadata, ratings, trust graph, channels,
+endorsement lists) is implemented. The actual IPFS/IPNS _network_ layer
+(resolving an `ipns://` name, fetching and publishing content, gossip)
+remains explicitly **not** planned for this package (see CONTRIBUTING.md
+"Scope") — that's a future, separate package once a client needs it. If
+you're picking this up with nothing specific in mind, read hosting.md and
+client-recommendations.md fresh for anything this library could still
+usefully compute without doing network I/O itself (the IPNS derivation
+work was exactly this kind of find), or consider a `neusnet-node` /
+`neusnet-client` package that uses this one.
 
 ## The trust graph module: what to know before touching it
 
@@ -176,6 +178,46 @@ provably unreachable (upstream invariants — `compositeAffinitiesOf`'s
 Map-based dedup and an earlier guard in the same loop — already
 guarantee what they checked). Deleting provably-dead code beats
 contriving a test that has to break the invariant to exercise it.
+
+## IPNS derivation: what to know before touching it
+
+This is the one module in the library where getting a detail wrong would
+be invisible until tested against real IPFS/libp2p tooling, not just
+against this codebase's own tests — so it's worth recording exactly how it
+was verified, not just what it does.
+
+- **The initial plan was wrong, and a search caught it before any code was
+  written.** The natural assumption — SHA2-256-hash the protobuf-encoded
+  public key, like a normal multihash — is what _every_ other multihash in
+  this library's domain does, but libp2p peer IDs specifically use the
+  "identity" multihash (function code `0x00`, no hashing, payload wrapped
+  as-is) for any key small enough to not need hashing, which an Ed25519
+  key's 36-byte protobuf encoding always is. Hashing here would have
+  produced a value that looks plausible (right length, right alphabet) but
+  doesn't match any real IPFS tool's output — the worst kind of bug, since
+  nothing in this codebase's own tests would have caught it.
+- **Verified against an independently-sourced worked example**, not
+  memory: a forum post gave the exact byte layout for one real Ed25519 key
+  (`0172002408011220cb3111...`), which was decoded by hand (see the test
+  file's comment) to confirm the CIDv1/libp2p-key/identity-multihash/
+  protobuf structure byte-for-byte, and the resulting base36 string was
+  computed independently in Python before any TypeScript was written. That
+  computed string — `k51qzi5uqu5dl8wlbw09j1cpr1i456yb3mv0r5wnpx3wz6qq8pnppkvgqdepc8`
+  — is now a hardcoded known-answer test. It also starts with
+  `k51qzi5uqu5d`, matching every illustrative IPNS name already used
+  throughout the spec's own examples — a nice confirmation that those
+  examples were at least shaped correctly.
+- **Only the Ed25519/identity-multihash path is implemented.** libp2p also
+  defines a SHA2-256 path for keys too large to inline (RSA, mainly); this
+  library only ever produces Ed25519 keys, so that path is simply never
+  needed and isn't built. `deriveIpnsName` rejects anything that isn't
+  exactly 32 bytes, rather than silently taking a wrong path for a key of
+  a different size.
+- **The protobuf encoding is hand-rolled, deliberately**, not pulled in via
+  a protobuf library: the libp2p `PublicKey` message has exactly two fixed
+  fields with lengths that always fit a single varint byte for this
+  library's inputs, so a general-purpose encoder would be a dependency
+  for four lines of code.
 
 ## Channels: what to know before touching it
 
@@ -543,6 +585,18 @@ a possibly-wrong assumption. Three for three so far; check the next
 appendix example this carefully too, not just the first time.
 
 ## Persistence / resumption notes
+
+**Dependency advisories can appear between sessions even with no code
+changes.** A clean-room verify of this exact session's own prior archive
+flagged a high-severity transitive advisory (`vite`, via `vitest`'s
+tooling) that an earlier identical install hadn't. `npm audit fix`
+resolved it without touching `package.json`'s version ranges — only the
+lockfile's resolved transitive versions — and all 669 tests still passed
+afterward. Run `npm audit` as part of the normal verification sequence
+(not just test/typecheck/lint/format/build), not only when something
+seems off; a transitive dependency's own newly-published patch or
+newly-disclosed advisory doesn't require any change on this project's
+side to appear.
 
 **Scratch space can be wiped mid-turn, not just between turns.** It happened
 during the version-history work: only the file created after the reset

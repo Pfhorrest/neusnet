@@ -359,6 +359,42 @@ identity.md §7.1 describes. The three functions are deliberately separate:
 inspect `clusters` on its own to show a user their link graph, independent
 of what mode is currently chosen.
 
+### Endorsement lists and IPNS names (hosting.md §8.1, identity.md §5.3)
+
+```ts
+import {
+  deriveIpnsName,
+  identityDocumentPath,
+  endorsementListPath,
+  createEndorsementList,
+} from 'neusnet-core';
+
+const ipnsName = deriveIpnsName(alice.publicKey); // => "k51qzi5uqu5d..."
+identityDocumentPath(ipnsName); // => "ipns://k51.../identity.json"
+endorsementListPath(ipnsName); // => "ipns://k51.../endorsements.json"
+
+const list = createEndorsementList(
+  {
+    owner: aliceId,
+    generated: 1_700_002_000,
+    entries: [
+      { id: 'ipns://k51post', version_id: 'ipfs://bafyversion1', pinned_at: 1_700_001_000 },
+    ],
+  },
+  alice.secretKey,
+);
+```
+
+`deriveIpnsName` is the one piece of IPFS/libp2p-specific binary encoding
+in this otherwise substrate-agnostic library (identity.md §5.3's formula):
+the standard libp2p peer-ID-as-CIDv1 construction for an Ed25519 key,
+displayed in base36. It's pure computation, independently verified against
+a worked example sourced outside this codebase (see PROGRESS.md) rather
+than implemented from memory — getting a binary format like this subtly
+wrong would silently break interoperability with every other libp2p tool.
+`rotationDeclarationPath` builds the equivalent path for a key-rotation
+declaration (identity.md §6.3).
+
 ### Canonicalization and encoding (lower-level, used internally)
 
 `src/canonicalization/jcs.ts` and `src/encoding/{base58,base64url}.ts` are

@@ -10,6 +10,7 @@
 
 // Encoding and canonicalization
 export { BASE58_ALPHABET, decodeBase58, encodeBase58 } from './encoding/base58.js';
+export { BASE36_ALPHABET, decodeBase36, encodeBase36 } from './encoding/base36.js';
 export { decodeBase64Url, encodeBase64Url } from './encoding/base64url.js';
 export { canonicalizeJson } from './canonicalization/jcs.js';
 
@@ -50,6 +51,12 @@ export {
   type PlatformBindingResult,
   type VerifyPlatformBindingInput,
 } from './identity/platform-binding.js';
+export {
+  deriveIpnsName,
+  endorsementListPath,
+  identityDocumentPath,
+  rotationDeclarationPath,
+} from './identity/ipns.js';
 export {
   applyIdentityMapping,
   computeIdentityMapping,
@@ -140,6 +147,16 @@ export {
   type PostInfo,
   type TrustGraph,
 } from './ratings/trust-graph.js';
+export {
+  createEndorsementList,
+  isValidEndorsementList,
+  validateEndorsementList,
+  verifyEndorsementList,
+  type CreateEndorsementListInput,
+  type EndorsementEntry,
+  type EndorsementList,
+  type VerifyEndorsementListOptions,
+} from './hosting/endorsement-list.js';
 export {
   createChannel,
   discoverTopLevelTags,
