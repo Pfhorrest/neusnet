@@ -1,53 +1,50 @@
 # neusnet
 
-*A decentralized discussion platform with user-sovereign curation*
+*A proposed decentralized discussion platform with user-sovereign curation*
 
 The name combines "new" with "Usenet" and is pronounced "news net" — evoking both the platform that inspired it and what it aspires to become.
+
+> **Project status:** An early, test-driven TypeScript reference implementation of core protocol primitives now lives in [`core/`](core/), alongside detailed specifications in [`spec/`](spec/). The project does not yet include a complete client or a functioning interoperable network; the core is not production-ready. See [`core/PROGRESS.md`](core/PROGRESS.md) for its implementation status.
 
 ---
 
 ## Why This Exists
 
-The early internet was a **pull medium**. You decided what to look for, and you went and found it. This was sometimes hard — you had to already know something existed before you could find it — but the tools kept improving. Hyperlinks, webrings, indices, and then proper search engines made it progressively easier to discover content without already knowing exactly where it lived. The user was in control.
+The early internet was a **pull medium**: you chose what to look for and went to find it. That was sometimes hard, but the tools kept improving. Hyperlinks, directories, webrings, and search engines made discovery progressively easier while leaving the initiative with the user.
 
-Platforms like **Usenet** embodied this ethos at the infrastructure level: posts were distributed across many independent servers with no central host, and every server held a copy of everything, so no single entity could control what existed. Individual users managed their own experience with *killfiles* — personal blocklists that filtered out authors or topics they didn't want to see. It was crude, but the principle was right: distribution was the network's job, and curation was the user's job. Usenet wasn't designed to scale to a billion users, and it showed — but its instincts about where control should live were sound.
+**Usenet** embodied this ethos at the infrastructure level. It distributed posts among independently operated servers, while users curated their own reading with *killfiles* — personal filters for authors or topics. Usenet was not one perfectly replicated archive: servers carried selected newsgroups according to their configuration and peering arrangements, and retention and availability varied. Still, it demonstrated a useful separation of responsibilities: distribution was the network's job, and curation was the reader's.
 
-In 1996, a company called **[PointCast](https://en.wikipedia.org/wiki/PointCast_(company))** launched a product that turned idle PC screens into news tickers by pushing content directly to users' desktops without them asking for it. It was a sensation, and it triggered a wave of investment and imitation. Microsoft built "Active Desktop," Netscape built "Netcaster," and a cluster of startups including Marimba, BackWeb, and others competed to establish **push technology** as the next paradigm of the internet. The pitch was seductive: instead of the tiring, effortful experience of browsing the web, content would simply arrive. The analogy invoked, approvingly, was television.
+In 1996, **[PointCast](https://en.wikipedia.org/wiki/PointCast_(company))** popularized **push technology**, delivering news to users' desktops without their asking for it. Microsoft's Active Desktop, Netscape's Netcaster, and a wave of startups followed. The pitch was that content would simply arrive, and the analogy invoked, approvingly, was television. People who remembered what television was — a few broadcasters deciding what hundreds of millions of people would see — were not enthused. The branded push wave collapsed within a few years, and [RSS](https://www.rssboard.org/rss-specification) emerged as a lighter, user-controlled alternative.
 
-People who remembered what television was — a medium where a small number of broadcasters decided what hundreds of millions of people would see — were not enthused. The backlash was pointed. By the late 1990s, "push" as a branded concept had quietly collapsed; PointCast, which had turned down a $450 million acquisition offer at its peak, was eventually sold for a few million dollars. [RSS](https://www.rssboard.org/rss-specification) emerged as a lightweight, user-controlled alternative to push channels, and the movement was declared dead.
+But the underlying model survived under a different name. Today's feeds often work as push in all but branding: a platform, a government, a moderation team, or an opaque ranking system decides what you see, using criteria you may not be able to inspect or override without leaving the service.
 
-Except it wasn't dead. It just stopped announcing itself. By the 2000s and 2010s, push had won — it just called itself **the algorithm** instead. Some central authority — a corporation, a government, a platform's moderation team, or increasingly an opaque machine learning system — decides what you should see and delivers it to you. You did not choose this curator. You cannot inspect their criteria. You cannot override their decisions except by leaving the platform entirely.
+Meanwhile, the spaces that remain pull-oriented tend to face a dilemma. Without centralized moderation they can drown in spam and abuse; with it, they often quietly recentralize around a small group of administrators or moderators whose decisions affect everyone in the community. These are not the only possible ways to organize online discussion, but they expose a tension between shared infrastructure, community governance, and individual choice.
 
-Meanwhile, the few remaining pull-oriented spaces on the internet are either drowning in spam and abuse (because centralized moderation has been removed without replacement) or have quietly recentralized moderation around a small number of powerful community members who are, again, not chosen by you and not accountable to you.
+**neusnet is an attempt to recover what was lost — personal control over curation — at the scale and ease of the modern internet.**
 
-**neusnet is an attempt to recover what was lost, at the scale and ease of the modern internet.**
-
-The goal is a discussion platform where content curation is entirely in the hands of each individual user — not their platform provider, not their government, not the most powerful members of their community — while still being usable by ordinary people who don't want to spend hours manually configuring filters.
-
-The insight at the center of neusnet is that you don't need a central authority to have effective curation. You just need to be able to borrow the judgment of people you trust, automatically, transitively, and under your own control. Think of it as Usenet's distributed hosting and personal killfiles — updated, generalized, and scaled to the modern internet.
+**neusnet aims to make personal curation practical at modern-internet scale.** Its central idea is that a person can borrow the judgments of people they trust, transitively and under their own control, rather than rely exclusively on a platform's default ranking or manually configure every filter themselves. It combines ideas from Usenet's distributed hosting and personal killfiles with a proposed trust graph and interoperable content metadata.
 
 ---
 
-## The Core Idea: A Trust Graph as Curation Engine
+## How It Works: A Trust Graph as Curation Engine
 
-Every user maintains a local record of how they have rated content: posts, links, articles, media — anything with an addressable identifier. These ratings are multidimensional (see below) and are published as a public record, though individual ratings may be marked private by their author.
+Each user can maintain a local record of how they have rated content: posts, links, articles, media, or other items with addressable identifiers. These ratings are multidimensional (see below). Public ratings may be shared for other people's graph calculations; ratings marked private are intended to remain local and influence only their owner's view. The privacy limits of that arrangement are described below.
 
-When you rate a piece of content, you are also implicitly rating its **author**. A user whose posts you have consistently rated positively has high **affinity** with you. A user whose posts you have consistently rated negatively has negative affinity with you.
+When you rate a piece of content, the system can also treat that rating as a signal about its **author**. A user whose posts you have consistently rated positively may develop high **affinity** with you; consistently negative ratings may contribute to negative affinity. Affinity is an inferred preference signal, not proof that a person is trustworthy or untrustworthy.
 
-These affinities propagate:
+These affinities propagate through the graph:
 
-- Content rated highly by **high-affinity users** appears with a higher default score in your view.
-- Content rated highly by **low-affinity users** (people you distrust) appears with a lower default score.
-- The enemy-of-my-enemy principle applies: content rated highly by someone who is themselves disliked by someone you dislike gets a modest positive boost.
-- This propagation continues transitively — through friends of friends, and so on — lazily, fetching more distant ratings as bandwidth and compute allow.
+- Ratings from people with positive affinity can increase an item's default score; ratings from people with negative affinity can decrease it.
+- The design also includes a modest **enemy-of-my-enemy** effect: a rating from someone opposed by another person you distrust may receive some positive influence.
+- Influence can propagate transitively through the graph, with clients fetching more distant ratings as bandwidth, storage, and compute allow.
 
-Each step further from you in the graph is weighted by a **decay factor** that you control. At one extreme (decay = 1), everyone's ratings weigh as much as your own, regardless of how distant the connection. At the other extreme (decay = 0), only your own explicit ratings have any weight. Most users will live somewhere in between — probably around 0.5, meaning each additional hop in the trust graph halves the influence of those ratings on your view.
+Each additional graph step is weighted by a **decay factor** that you control. At 1, distance imposes no discount: a rating from anyone in your graph, however distant, can weigh as much as your own. At 0, only your own ratings count. Around 0.5, each additional hop halves a rating's weight.
 
-You also control a **visibility threshold**: content whose aggregate weighted score falls below this threshold is dropped from your view entirely. The default is 0, meaning only net-positive content is shown, but users who want to see critical or controversial material can lower this.
+You also control a **visibility threshold**: content whose aggregate weighted score falls below this threshold is excluded from your default feed. The default is 0, meaning only net-positive content is shown by default, but users who want to see critical or controversial material can lower this. Explicit search and direct navigation are intended to remain separate from this feed filter.
 
-Your own explicit ratings always carry more weight than any imported rating, regardless of affinity. The trust graph provides defaults; you always have the final word.
+No imported rating ever outweighs your own explicit rating: at most, it can equal it. The graph supplies defaults for your feed; your explicit judgments can always override those defaults.
 
-This is sometimes described informally as **"choose your own mod team"** — except the team you're choosing isn't moderating anyone else's view, only yours.
+This may be described informally as **"choose your own mod team"** — other people's judgments pre-filter content for you, but the people whose judgments you borrow influence only your view, not everyone else's.
 
 ### Multidimensional Ratings
 
@@ -71,23 +68,68 @@ Decay and visibility threshold are configurable **per dimension**, not just glob
 The object of a rating is intentionally general. The obvious case is a post, but the rating schema is designed to accommodate:
 
 - **Posts and content items** — the primary case, identified by CID, URL, or platform-specific ID
-- **Tags** — rating a tag up or down lets you boost or suppress entire topics in your feed, and generates affinity signals for authors who use those tags heavily. Someone who posts prolifically under a tag you've downvoted will accumulate negative affinity with you accordingly.
-- **Users directly** — explicit positive or negative ratings of a user by public key, independent of any specific post, for cases where your opinion of someone is clear enough to state outright
+- **Tags** — rating a tag up or down lets you boost or suppress entire topics in your feed, and indirectly generates affinity signals for authors who use those tags heavily. Someone who posts prolifically under a tag you've downvoted will accumulate negative affinity with you accordingly.
+- **Users directly** — explicit positive or negative ratings of a user by identifier, independent of any specific post, for cases where your opinion of someone is clear enough to state outright
 - **Anything else with a stable identifier** — the schema leaves this open
 
-This generality means the trust graph is richer than a simple post-rating system. Downvoting a tag associated with a harassment campaign, for instance, doesn't just hide posts with that tag — it pushes the people who use it toward the negative-affinity end of your graph, which in turn de-weights their ratings of everything else.
+This generality is intended to make the trust graph richer than a simple post-rating system. Downrating a tag associated with a harassment campaign, for example, may lower the default visibility of that topic and contribute negative affinity signals for prolific users of the tag.
 
-Importantly, affinity for tags accrues implicitly just as it does for authors. If you (or people with positive affinity to you) consistently downrate posts that carry a particular tag, that tag accumulates negative affinity in your view automatically — you don't need to explicitly rate the tag itself. If a cluster of authors you already distrust migrates from one toxic topic to a new one under a fresh tag, the new tag inherits their negative affinity without you having to take any action. The trust graph learns the shape of communities, not just individuals.
+Affinity flows through these relationships. Posts connect users and tags: a post has an author and carries tags, but users and tags are related to each other only through posts. Ratings of a post therefore affect both its author and its tags. Ratings of a user affect that user's posts, and through them, indirectly, the tags those posts carry. Ratings of a tag affect the posts carrying it, and through them, indirectly, their authors.
+
+This means a tag can accumulate affinity without anyone rating the tag itself. If you, or people whose judgments you borrow, consistently downrate posts carrying a tag, that tag accumulates negative affinity in your view. If a cluster of authors you already distrust migrates to a new topic under a fresh tag, the new tag inherits their negative affinity without you taking any action. The graph learns the shape of communities, not just individuals. The same inference, however, *can* misfire: people who use a tag for different reasons, such as counter-speech or research, can be caught by it. The graph infers patterns from ratings; it does not know motives.
 
 ### Filters Are a Default, Not a Lock
 
-Visibility thresholds and affinity-based filtering are defaults applied to your general feed — they are not censorship of your own access. Content below your threshold remains directly accessible:
+Visibility thresholds and affinity-based filtering are intended as defaults for a general feed, not as rules that prohibit access. A client can be designed so that:
 
-- Following a link or parent-post reference to a low-rated item will always retrieve it.
-- Explicitly searching for posts by a downrated author, or tagged with a downrated tag, bypasses your filters and shows results directly.
-- There is no mechanism that prevents you from reading content you have chosen to deprioritize — only from having it surface unsolicited.
+- Following a link or parent-post reference to a low-rated item attempts to retrieve it rather than silently applying the feed filter.
+- Explicitly searching for posts by a downrated author, or tagged with a downrated tag, bypasses the default feed filter.
+- Filtering controls what is surfaced unsolicited, rather than deciding what the user is permitted to read.
 
-This matters for practical reasons: a highly-rated post in your feed may be a rebuttal of something your filters would normally hide; you can follow the parent link to read what is being rebutted. A researcher investigating a toxic community can search explicitly for posts under a tag their filters would otherwise suppress. The system models your preferences, not your permissions.
+This distinction matters in practice: a highly rated post may rebut an item your feed normally hides, and a researcher may deliberately search a tag they usually suppress. The design aims to model preferences, not permissions.
+
+---
+
+## Communities Without Owners
+
+neusnet was originally conceived in the context of forum-like platforms — asynchronous discussion where posts accumulate over hours or days. But the line between "forum" and "chat" has always been blurry: people have real-time exchanges on forums, and chat threads stretch across days. The underlying problem neusnet addresses applies equally to both.
+
+That problem is structural: on platforms like Discord, Reddit, or any server- or group-based social network, someone has to be in charge. The server owner, the subreddit moderator, the group admin — their role is not incidental but architecturally mandated. The community's shared history and membership list live on infrastructure they control, which means curation policy is necessarily centralized. When that policy becomes contested, the only recourse is to leave — and leaving means abandoning the shared history and dispersing the community. This dynamic repeats endlessly: servers splinter, subreddits fork, communities scatter.
+
+neusnet's architecture dissolves this problem not by improving how centralized moderation works, but by eliminating the structural necessity of it — removing the protocol-level requirement for one shared owner or moderator to determine everyone's feed.
+
+### Tags as Communities
+
+The proposed organizing unit of neusnet is not a room, server, or group — it is a **tag**. Tags are freeform, unowned, and unregistered at the protocol level. Anyone can publish under `#philosophy`; no single tag owner controls who may use the name. The community that forms around a tag is shaped by who uses it and how readers weight those contributors through their trust graphs.
+
+This is inspired by Usenet's newsgroup model — `#philosophy` resembles a topic-centered forum without a required central registry or single tag owner. A subset of people wanting a more focused space can simply adopt a more specific tag. Tags support an optional dot notation for expressing explicit hierarchy: `#philosophy.epistemology` asserts that this post is about epistemology as a subtopic of philosophy, while `#philosophy-basement` is simply a flat tag whose name happens to contain "philosophy". A community can self-organise under `#philosophy.basement` to make that containment relationship explicit, or use a flat tag to remain independent. Either way, the community is owned by no one. Searching for `#epistemology` returns posts tagged `#philosophy.epistemology` and `#psychology.epistemology` alike — hierarchical tagging adds precision without creating silos or penalising discoverability.
+
+### Channels as Community Spaces
+
+A client that lets users save tag searches as named **channels** provides the Discord channel experience without the Discord power structure. A user might configure:
+
+- A `#music` channel
+- A `#philosophy` channel
+- A `#philosophy.epistemology` subchannel
+- A `#philosophy.basement` channel for a specific community
+
+Each channel is intended to be a personalized, trust-graph-filtered view of posts under those tags — a curated space assembled from content the client can discover and retrieve. Two members of the same tag-community can see different views based on their trust graphs. There need not be one authoritative feed or moderator whose decision changes every reader's view, although particular clients and hosting services can still shape the experience available through them. Channels are specified in detail in ratings.md §6.4–6.6.
+
+### The Schism Problem
+
+The recurring schism dynamic of community platforms — where a faction unhappy with administration policy leaves to found a rival space — could look different through this lens. In some room-based platforms, leaving can mean losing access to shared history or an established audience. In neusnet, tags and personal feeds are not inherently owned by one administrator, so a group can organize differently without requiring the original tag to be transferred or forked.
+
+A group of users who want a more focused version of a community can coalesce around a subtag like `#philosophy.basement` or a purpose-named tag like `#philosophy.the-philosophy-basement` without anyone being expelled from anything. Posts tagged `#philosophy.basement` are automatically included in any `#philosophy` channel by virtue of containing `philosophy` as a tag segment — no manual configuration needed. Posts tagged with a flat tag like `#philosophy-basement` would need to be manually added to a user's `#philosophy` channel local taxonomy, and clients would offer that as a suggestion with a clear disclosure of its scope. The broader community can continue to exist while the sub-community gains a more specific identity. The two can coexist, with their relationship shaped more by individual trust-graph choices and channel configurations than by a single administrator's decision.
+
+### Presence and Buddy Lists
+
+The `status` field in the identity document (see identity.md §5.2) allows users to publish a short free-text presence signal — "writing", "away", "open to discussion" — updated as frequently as they like. This is not binary online/offline presence detection, which would require centralized infrastructure, but it is sufficient for the social function presence serves in most contexts: knowing whether someone is around and what they're up to.
+
+Clients can compose this with the feed model to produce a **buddy list** for any tag-feed: the set of authors with posts in that feed who have positive affinity, ordered by recency of identity document update, with their current status displayed. No new protocol machinery is required — this falls entirely out of the trust graph, the tag system, and the identity document, composed by the client.
+
+### The Real-Time Layer
+
+neusnet does not attempt to replace the purely ephemeral layer of chat platforms — typing indicators, voice and video, instantaneous delivery guarantees. For those, [Matrix](https://matrix.org) and [XMPP](https://xmpp.org) are appropriate transports and neusnet is designed to interoperate with them (see hosting.md §5). The division of responsibility is clean: neusnet handles everything above the threshold of content worth persisting; real-time transient signaling is delegated to protocols built for it. A client could present both in a unified interface without either layer needing to subsume the other.
 
 ---
 
@@ -97,7 +139,7 @@ neusnet is designed as a stack of independent layers, each of which can in princ
 
 ### Layer 1: Ratings
 
-A rating record captures a single act of evaluation: who rated what, on which dimensions, with what values, and when. Records are signed by the rater's private key, making them tamper-evident and attributable. Each record may be marked public (shared with peers and used in others' graph traversal) or private (kept local and used only in the owner's own view). This allows users to rate sensitive content — political, personal, adult — in a way that shapes their own view without disclosing what they have been looking at.
+A rating record captures a single act of evaluation: who rated what, on which dimensions, with what values, and when. Records are signed by the rater's private key, making changes detectable and tying the record to that key. Each record may be marked public (shared with peers and used in others' graph traversal) or private (intended to remain local and used only in the owner's view). This can let users rate sensitive content — political, personal, or adult — without publishing the ratings themselves. It does not, however, hide the fact that you fetched the content; see [Design Goals and Limits](#design-goals-and-limits).
 
 The rating layer is **platform-agnostic**. Item identifiers can be anything: a URL, a content hash, a magnet link, a post ID on another platform. This means the neusnet trust graph can in principle be applied as a curation layer on top of existing platforms — a browser extension that applies neusnet ratings to content on other sites is a natural early application. Within the [Bluesky](https://bsky.social) ecosystem specifically, [AT Protocol](https://atproto.com)'s "feed generator" feature allows third-party algorithms to rank and filter content; a neusnet trust graph exposed as a feed generator would let Bluesky users benefit from personal trust-graph curation without leaving the platform.
 
@@ -113,11 +155,11 @@ The content reference can point to an off-platform URL (making the post function
 
 ### Layer 3: Identity
 
-Users are identified by a stable, verifiable identifier that can be used to sign ratings and posts. The simplest and most self-sovereign option is a **cryptographic keypair**: your public key is your identity, your private key signs your content, and there is no registration, no username database, no central authority that can revoke your identity.
+Users can be identified by a stable, verifiable identifier used to verify signatures on ratings and posts. One self-sovereign option is a **cryptographic keypair**: the public key identifies the signer and the private key signs content, without requiring a central registry to issue the identity.
 
 Other identity mechanisms are possible and may be preferable in some deployments. AT Protocol (Bluesky's underlying protocol) provides a decentralized identity layer based on DIDs (Decentralized Identifiers) that could serve the same function while also enabling tighter integration with the Bluesky ecosystem. Other DID-based systems, or even federated identity providers, could plug into the same slot. The core requirement is that an identifier be stable and verifiable. Decentralization is strongly preferred for the long-term philosophy of the system, but it is not a hard technical requirement: platform-issued identifiers (including OAuth/SSO providers like Google, Apple, or GitHub) could in principle serve as user IDs, which might ease integration with existing platforms during early adoption even if they introduce a degree of central dependency that a mature deployment would want to avoid.
 
-The primary adversarial threat to a trust-graph system is the **Sybil attack**: a bad actor generating many fake identities to flood the graph with coordinated ratings. neusnet's natural defense is that fake accounts have no ratings power until real users develop positive affinity toward their posts — which requires actually producing content that real humans find valuable. Coordinated inauthentic behavior remains a risk but is bounded: a coordinated cluster cannot propagate its influence far into the broader graph without genuine cross-community endorsement, which the decay factor naturally limits.
+A major adversarial threat to a trust-graph system is the **Sybil attack**: one actor creating many identities to flood the graph with coordinated ratings. The design hopes to limit the influence of new or weakly connected identities because their ratings have zero influence until the graph gives them weight, which requires actually producing content that real humans find valuable. Coordinated inauthentic behavior remains a risk, and decay alone does not bound it. Decay attenuates influence per hop, but how much a cluster can accumulate through genuine endorsements, including from a single respectable account that vouches for many others, depends on how ratings are aggregated. These mitigations depend on the precise protocol rules and require adversarial testing.
 
 *Specified in detail in [identity.md](spec/identity.md).*
 
@@ -130,10 +172,10 @@ This layer is **deliberately hosting-agnostic**. The metadata file (Layer 2) con
 
 **IPFS** is the preferred hosting backend for neusnet's own content. Its central feature is *content addressing*: every file is identified by a cryptographic hash of its contents (a CID, or Content Identifier), not by where it is stored. This means:
 
-- The same content always has the same identifier regardless of who is hosting it, solving canonicalization for cross-posts and reposts.
-- Content is tamper-evident by construction — any modification changes the CID.
-- Content is retrievable from any peer who has it, with no central server.
-- Link rot is replaced by a softer failure mode: content becomes unavailable only when *nobody* is hosting it, not when a single server goes down.
+- A content identifier is derived from the encoded content and addressing parameters rather than a server location, so matching CIDs can help identify identical encoded content across hosts.
+- A change to the addressed bytes produces a different identifier, making unexpected changes detectable when the CID is verified. Equivalent-looking content does not necessarily have the same CID unless it is represented consistently.
+- Content may be retrieved from any reachable provider that has it; no single server is inherently required by the addressing model.
+- Link rot is replaced by a softer failure mode: content becomes unavailable only when *nobody reachable* is hosting it, not when a single server goes down.
 
 Short text content (including the metadata file itself) can be stored directly as IPFS objects. Larger media — audio, video, high-resolution images — can also be stored on IPFS, which handles content of any size uniformly through its block-splitting architecture.
 
@@ -147,13 +189,13 @@ For deployments that prefer not to use IPFS at all, BitTorrent can serve as a wh
 
 #### Conventional HTTP hosting
 
-Nothing prevents a neusnet metadata file from pointing to content on an ordinary web server. This is obviously less resilient than IPFS or BitTorrent (a single server can go down or be pressured to remove content), but it is fully functional and may be appropriate for some use cases — for instance, a publisher who controls their own server and wants to participate in the neusnet rating graph without migrating their content.
+A neusnet metadata file can point to content on an ordinary web server. This may be less resilient than a well-replicated peer-to-peer deployment because a single server can go down or remove content, but it can be a practical choice for a publisher who controls their own server and wants to participate in the neusnet rating graph without migrating content.
 
 #### Overlaying neusnet on existing social platforms
 
 The most important consequence of hosting-agnosticism is that neusnet does not require anyone to abandon their existing online presence to participate.
 
-Platforms like **[Mastodon](https://joinmastodon.org)** (built on [ActivityPub](https://www.w3.org/TR/activitypub/)) and **Bluesky** (built on AT Protocol) expose open APIs designed for third-party clients. A neusnet client could read your feeds from these platforms, apply your personal trust graph as the ranking layer *instead of each platform's own algorithm*, and present a unified view across all of them. Multi-platform social clients already exist; what neusnet adds is a curation layer that is yours rather than the platform's.
+Platforms like **[Mastodon](https://joinmastodon.org)** (built on [ActivityPub](https://www.w3.org/TR/activitypub/)) and **Bluesky** (built on AT Protocol) offer interfaces that third-party clients can use, subject to each platform's capabilities and rules. A neusnet-aware client could apply a personal trust graph to the content it can retrieve and present a unified view across services. The practical scope of each integration depends on available APIs, access conditions, and client support; neusnet cannot independently override a platform's access restrictions. Its proposed contribution is a portable curation layer that users can control.
 
 Cross-posting works in the reverse direction: when you publish a native neusnet post, your client can simultaneously post to Mastodon, Bluesky, or other connected platforms, spreading your content to audiences who haven't yet adopted neusnet.
 
@@ -167,74 +209,27 @@ This suggests a realistic adoption path: neusnet begins as a curation and identi
 
 ---
 
-## Communities Without Owners
-
-neusnet was originally conceived in the context of forum-like platforms — asynchronous discussion where posts accumulate over hours or days. But the line between "forum" and "chat" has always been blurry: people have real-time exchanges on forums, and chat threads stretch across days. The underlying problem neusnet addresses applies equally to both.
-
-That problem is structural: on platforms like Discord, Reddit, or any server- or group-based social network, someone has to be in charge. The server owner, the subreddit moderator, the group admin — their role is not incidental but architecturally mandated. The community's shared history and membership list live on infrastructure they control, which means curation policy is necessarily centralized. When that policy becomes contested, the only recourse is to leave — and leaving means abandoning the shared history and dispersing the community. This dynamic repeats endlessly: servers splinter, subreddits fork, communities scatter.
-
-neusnet's architecture dissolves this problem not by improving how centralized moderation works, but by eliminating the structural necessity of it.
-
-### Tags as Communities
-
-The organizing unit of neusnet is not a room, server, or group — it is a **tag**. Tags are freeform, unowned, and unregistered. Anyone can post under `#philosophy`; no one administers it. The community that forms around a tag is defined entirely by who uses it and how the people who read it weight those contributors through their trust graphs.
-
-This maps directly onto Usenet's newsgroup model — `#philosophy` is `rec.arts.philosophy` without the hierarchy and without the server operator who could shut it down. A subset of people wanting a more focused space can simply adopt a more specific tag. Tags support an optional dot notation for expressing explicit hierarchy: `#philosophy.epistemology` asserts that this post is about epistemology as a subtopic of philosophy, while `#philosophy-basement` is simply a flat tag whose name happens to contain "philosophy". A community can self-organise under `#philosophy.basement` to make that containment relationship explicit, or use a flat tag to remain independent. Either way, the community is owned by no one. Searching for `#epistemology` returns posts tagged `#philosophy.epistemology` and `#psychology.epistemology` alike — hierarchical tagging adds precision without creating silos or penalising discoverability.
-
-### Channels as Community Spaces
-
-A client that lets users save tag searches as named **channels** provides the Discord channel experience without the Discord power structure. A user might configure:
-
-- A `#music` channel
-- A `#philosophy` channel
-- A `#philosophy.epistemology` subchannel
-- A `#philosophy.basement` channel for a specific community
-
-Each channel is a personalized, trust-graph-filtered view of all posts under those tags — the user's own curated space, assembled from the global tag space, answerable to no one but themselves. Two members of the same tag-community see different views of it based on their respective trust graphs. There is no single authoritative view, no algorithm imposed from above, no moderator whose removal of a post affects what you see. Channels are specified in detail in ratings.md §6.4–6.6.
-
-### The Schism Problem
-
-The recurring schism dynamic of community platforms — where a faction unhappy with administration policy leaves to found a rival space — looks different through this lens. In a room-based platform, leaving is costly: you lose access to shared history, your posts are left behind, the community fractures along an ownership boundary. In neusnet, there is no ownership boundary to fracture along.
-
-A group of users who want a more focused version of a community can coalesce around a subtag like `#philosophy.basement` or a purpose-named tag like `#philosophy.the-philosophy-basement` without anyone being expelled from anything. Posts tagged `#philosophy.basement` are automatically included in any `#philosophy` channel by virtue of containing `philosophy` as a tag segment — no manual configuration needed. Posts tagged with a flat tag like `#philosophy-basement` would need to be manually added to a user's `#philosophy` channel local taxonomy, and clients would offer that as a suggestion with a clear disclosure of its scope. The broader community loses nothing; the sub-community gains a coherent identity. Both can exist simultaneously without conflict, and the relationship between them is determined by individual trust graph choices and channel configurations rather than administrative fiat.
-
-### Presence and Buddy Lists
-
-The `status` field in the identity document (see identity.md §5.2) allows users to publish a short free-text presence signal — "writing", "away", "open to discussion" — updated as frequently as they like. This is not binary online/offline presence detection, which would require centralized infrastructure, but it is sufficient for the social function presence serves in most contexts: knowing whether someone is around and what they're up to.
-
-Clients can compose this with the feed model to produce a **buddy list** for any tag-feed: the set of authors with posts in that feed who have positive affinity, ordered by recency of identity document update, with their current status displayed. No new protocol machinery is required — this falls entirely out of the trust graph, the tag system, and the identity document, composed by the client.
-
-### The Real-Time Layer
-
-neusnet does not attempt to replace the purely ephemeral layer of chat platforms — typing indicators, voice and video, instantaneous delivery guarantees. For those, [Matrix](https://matrix.org) and [XMPP](https://xmpp.org) are appropriate transports and neusnet is designed to interoperate with them (see hosting.md §5). The division of responsibility is clean: neusnet handles everything above the threshold of content worth persisting; real-time transient signaling is delegated to protocols built for it. A client could present both in a unified interface without either layer needing to subsume the other.
-
----
-
 ## Client Implementation Recommendations
 
 Recommended (non-mandatory) client behaviors and interface patterns — including endorsed content pinning, the channel interface, cached rating distribution, rating dimension iconography, and a proposal for user-operated AI proxy identities — are collected in [client-recommendations.md](client-recommendations.md).
 
 
 
-## What This Is Not
+## Design Goals and Limits
 
-- **Not a moderation system.** neusnet does not remove or suppress content globally. Content that is invisible to you may be perfectly visible to someone else. The platform has no global moderators and no central content policy.
-- **Not anonymous.** Posts and ratings are signed with keypairs. Pseudonymity is possible (your keypair need not be linked to your real identity), but the system does not provide anonymity guarantees. Users who need strong anonymity should route through appropriate tools independently.
-- **Not finished.** This document is a design proposal and invitation to collaborate, not a specification of a working system.
+- **Personal curation, not global moderation.** neusnet is designed so a rating or feed filter changes an individual's default view rather than globally removing an item from the protocol. This is not a guarantee that every host will serve every item or every client will display it.
+- **Pseudonymity, not built-in anonymity.** Posts and ratings may be signed with keys that are not linked to a legal identity, but signatures do not hide activity or network metadata. Private ratings are intended to stay local; they do not provide comprehensive protection against device access, network observation, or inference from other behavior. People who need strong anonymity require additional, appropriate protections beyond neusnet.
+- **Decentralization as a design direction, not an absolute guarantee.** Content-addressing can help verify content, but not ensure it remains hosted. A protocol without a global administrator can still depend in practice on popular clients, gateways, hosting providers, or social endorsement patterns.
+- **A work in progress.** The core implementation exercises selected protocol primitives, but does not constitute a complete, interoperable network or production system. The specifications and implementation will need further review and real-world testing.
 
 ---
 
-## Current Status and How to Get Involved
+## Project Status and How to Get Involved
 
-neusnet is currently in the **design and specification phase**. No production code exists yet.
+The [`core/`](core/) directory contains an early TypeScript reference implementation covering identity and signing, canonicalization, tags, metadata, ratings, and trust-graph calculations; [`core/PROGRESS.md`](core/PROGRESS.md) records its current status.
 
-The immediate priorities are:
+The next broad priorities are to review and stabilize the specifications and core implementation, build the networking, storage, and client layers, and validate the design through integration and adversarial testing. Integrations with existing social clients and hosting projects remain a potential adoption path, not a completed capability.
 
-1. Formalizing the ratings protocol and data schema
-2. Defining the metadata file format
-3. Prototyping the trust graph traversal algorithm
-4. Identifying existing projects — multi-platform social clients, IPFS tooling, AT Protocol developers — to collaborate with rather than duplicate
-
-If any of this resonates with you — whether you're interested in the philosophy, the cryptography, the distributed systems engineering, the client UX, or just want to argue about the design — contributions and discussion are welcome.
+If any of this resonates with you — whether you're interested in the philosophy, cryptography, distributed-systems engineering, client UX, testing, or just want to argue about the design — contributions and discussion are welcome.
 
 To get in touch, contact **Forrest Cameranesi** at [forrest@cameranesi.com](mailto:forrest@cameranesi.com).
