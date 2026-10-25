@@ -22,7 +22,7 @@ Meanwhile, the spaces that remain pull-oriented tend to face a dilemma. Without 
 
 **neusnet is an attempt to recover what was lost — personal control over curation — at the scale and ease of the modern internet.**
 
-**neusnet aims to make personal curation practical at modern-internet scale.** Its central idea is that a person can borrow the judgments of people they trust, transitively and under their own control, rather than rely exclusively on a platform's default ranking or manually configure every filter themselves. It combines ideas from Usenet's distributed hosting and personal killfiles with a proposed trust graph and interoperable content metadata.
+Its central idea is that a person can borrow the judgments of people they trust, transitively and under their own control, rather than rely exclusively on a platform's default ranking or manually configure every filter themselves. It combines ideas from Usenet's distributed hosting and personal killfiles with a proposed trust graph and interoperable content metadata.
 
 ---
 
