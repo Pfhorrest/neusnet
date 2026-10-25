@@ -26,7 +26,7 @@ Meanwhile, the spaces that remain pull-oriented tend to face a dilemma. Without 
 
 ## Communities Without Owners
 
-Community platforms suffer a recurring schism: a faction unhappy with administration policy leaves to found a rival space. That problem is a structural one: on platforms like Discord, Reddit, or any server- or group-based social network, someone has to be in charge. The server owner, the subreddit moderator, the group admin — their role is not incidental but architecturally mandated.
+Community platforms suffer recurring schisms: a faction unhappy with administration policy leaves to found a rival space. That problem is a structural one: on platforms like Discord, Reddit, or any server- or group-based social network, someone has to be in charge. The server owner, the subreddit moderator, the group admin — their role is not incidental but architecturally mandated.
 
 The community's shared history and membership list live on infrastructure they control, which means curation policy is necessarily centralized. When that policy becomes contested, the only recourse is to leave — and leaving means abandoning the shared history and dispersing the community. So servers splinter, subreddits fork, and communities scatter.
 
