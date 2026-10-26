@@ -53,8 +53,6 @@ Each additional graph step is weighted by a **decay factor** that you control. A
 
 You also control a **visibility threshold**: content whose aggregate weighted score falls below this threshold is excluded from your default feed. The default is 0, meaning only net-positive content is shown by default, but users who want to see critical or controversial material can lower this. Explicit search and direct navigation are intended to remain separate from this feed filter.
 
-No imported rating ever outweighs your own explicit rating: at most, it can equal it. The graph supplies defaults for your feed; your explicit judgments can always override those defaults.
-
 ### Multidimensional Ratings
 
 Inspired by [Slashdot](https://slashdot.org)'s moderation categories, ratings in neusnet are not a single number but a set of independent dimensions. The core proposed dimensions correspond to four fundamental questions you might ask about any piece of content:
