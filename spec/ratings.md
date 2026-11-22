@@ -2,603 +2,663 @@
 
 *Working draft — design phase*
 
-This document specifies the neusnet ratings and trust graph protocol in enough detail to guide implementation and invite critique. It is a companion to [README.md](../README.md) (overview and motivation), [metadata.md](metadata.md) (Layer 2: Content Metadata), [identity.md](identity.md) (Layer 3: Identity), [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution), and [client-recommendations.md](client-recommendations.md) (client implementation recommendations). Where the README describes *what* and *why*, this document describes *how*.
+This document specifies the neusnet ratings and trust graph protocol. It is a companion to [README.md](../README.md) (overview and motivation), [metadata.md](metadata.md) (Layer 2: Content Metadata), [identity.md](identity.md) (Layer 3: Identity), [hosting.md](hosting.md) (Layer 4: Content Hosting and Distribution), and [client-recommendations.md](client-recommendations.md) (client implementation recommendations).
+
+Where the README describes *what* and *why*, this document describes *how*.
 
 ---
 
 ## 1. Fundamental Concepts
 
-### 1.1 Nodes and Edges
+### 1.1 Entities and Categories
 
-The neusnet trust graph contains three kinds of **nodes**:
+The neusnet graph contains three kinds of entities:
 
-- **Users** — identified by a stable user identifier (see Layer 3 spec)
-- **Posts** — identified by a content identifier (URL, [IPFS](https://ipfs.tech) CID, magnet link, platform-specific ID, etc.)
-- **Tags** — identified by their normalized string value (see Section 6)
+- **Users** — identified by stable user identifiers (see `identity.md`).
+- **Posts** — identified by content identifiers and associated version histories (see `metadata.md`).
+- **Categories** — identified by normalized category names (see Section 6).
 
-**Edges** are ratings: directed, weighted, and multidimensional. An edge runs from a rater (always a user) to a target (a post, a tag, or another user directly). The weight of an edge is the rating value on each dimension.
+These are all ordinary graph entities. No entity type has special ownership, authority, or taxonomy privileges.
 
-Posts are the central mediating objects in the graph. They connect users (as authors) to tags (as categorizations), and ratings of posts propagate derivatively to both. This is described in detail in Section 3.
+A **rating** expresses the degree to which a user associates a target with a category. Its value is a signed number in the range [-1, +1].
 
-### 1.2 Rating Dimensions
+The same operation serves two closely related purposes:
 
-Every rating is expressed independently on each of the following core dimensions:
+- **Categorization:** describing what a target is, concerns, or is associated with.
+- **Evaluation:** expressing how positively or negatively a target is regarded along a particular category.
 
-| Dimension | Positive meaning | Negative meaning |
-|-----------|-----------------|-----------------|
-| **True** | Accurate, well-evidenced | Inaccurate, misleading |
-| **Good** | Worthwhile, enjoyable | Unpleasant, harmful |
-| **Important** | Significant, deserving attention | Trivial, not worth the time |
-| **New** | Original, novel | Derivative, redundant |
+These are not separate protocol operations. Only context and presentation differentiate between a client treating a rating action as categorical or as evaluative. Of particular note, users may globally filter by a selection of categories (see §5.8), and in doing so make a target's effective ratings in those categories the criteria for its inclusion or exclusion in the user's view, and thus in practice evaluative of its worth in the dimensions expressed by those categories (such as `informative`, `enjoyable`, `important`, and `original`, the recommended defaults).
 
-Additional dimensions may be defined by communities or individual clients. The protocol treats all dimensions identically; the core four have no special status beyond being the recommended defaults.
+A category is itself an entity and may be rated in another category. This allows users to express relationships between categories using the same mechanism used to categorize posts and users. Categories may be associated with multiple other categories, and those associations may be positive, negative, or neutral.
 
-Rating values on each dimension are real numbers in the range **[-1, +1]**, where:
-- `+1` is the strongest possible positive rating on that dimension
-- `-1` is the strongest possible negative rating on that dimension
-- `0` is explicit neutrality, equivalent to omitting the dimension from the record
-- Omission of a dimension from a rating record is treated as `0` (no opinion expressed)
+There are no protocol-defined fixed rating dimensions. Every category is user-defined, and any category may be used to rate any eligible target. Clients may offer conventional defaults, but those defaults have no special status in the protocol.
 
-The recommended default user interface presents only three choices — **+1, 0, −1** — consistent with research showing that users gravitate toward extremes in rating systems and rarely use intermediate values meaningfully. Client software may optionally expose finer-grained input for users who want more precision. The protocol accepts any value in [-1, +1] regardless of how it was entered.
+### 1.2 Rating Values
 
-### 1.3 The Independence Principle
+A rating value is a real number in the range **[-1, +1]**:
 
-Each rating dimension is **fully independent**. The system operates as a set of parallel one-dimensional rating systems, one per dimension, that share the same graph topology but never cross-contaminate. A user's *True* affinity with a peer has no effect on how that peer's *Good* ratings are applied, and vice versa. All formulas in this specification apply independently per dimension; the dimension subscript is omitted for brevity but is always implied.
+- `+1` is the strongest positive association.
+- `-1` is the strongest negative association.
+- `0` is explicit neutrality.
+- `null` serves as a retraction of a prior rating, not a numerical rating itself.
+
+Zero and null are distinct. A zero is an active rating that expresses neutrality; null says that the user has withdrawn any rating of that target in that category.
+
+A missing rating record means that the user has not issued a current rating for that target and category. It is not equivalent to zero, but rather to null: a user issuing a null rating of a target in a category indicates to treat that target as though the user has not rated it in that category.
+
+Clients may expose a simple multiple-choice interface (positive, negative, neutral, and null) or allow finer-grained values. The protocol accepts any numeric value in the permitted range.
+
+### 1.3 Conventional Categories
+
+Clients may offer conventional categories as defaults. The suggested defaults are:
+
+- `informative`
+- `enjoyable`
+- `important`
+- `original`
+
+These are ordinary categories, not reserved protocol dimensions. Users may use other categories, rate categories themselves, and configure their own filters.
+
+There is no protocol-level distinction between a category used for broad feed filtering and one used for a specific subject or quality. That distinction is a client presentation choice.
+
+### 1.4 Unified Graph
+
+Ratings form a unified graph connecting users, posts, and categories. Relationships can be explicit or inferred from patterns of ratings, and can be traversed to derive affinities, taxonomies, and aggregate ratings.
+
+The graph is category-relative: the same entities may be related differently in different categories. Relationships between categories can also allow information to propagate from one category into another.
+
+The graph does not have separate, independent networks for fixed rating dimensions. Categories are entities within the graph, and their relationships are part of the graph itself.
 
 ---
 
 ## 2. Rating Records
 
-### 2.1 Schema
+### 2.1 Record Schema
 
-A rating record is a signed data structure with the following fields:
+A rating record is a signed data structure representing one user's current or historical rating of one target in one category.
 
 ```json
 {
   "neusnet_version": 1,
   "type":       "rating",
   "rater":      "<user-identifier>",
-  "item":       "<item-identifier>",
-  "item_type":  "<post | user | tag>",
-  "ratings":    { "<dimension>": <value>, "...": "..." },
+  "target":     "<target-identifier>",
+  "target_type":"<post | user | category>",
+  "category":   "<normalized-category-name>",
+  "value":      <number in [-1, +1] | null>,
   "timestamp":  <unix timestamp, integer seconds>,
   "public":     <boolean>,
   "signature":  "<cryptographic signature over all other fields>"
 }
 ```
 
-**`neusnet_version`** — integer. Must be `1` for records conforming to this specification. Allows future versions to be distinguished.
+**`neusnet_version`** — integer. Must be `1` for records conforming to this specification.
 
-**`type`** — string. Must be `"rating"`. Distinguishes rating records from other neusnet JSON objects.
+**`type`** — string. Must be `"rating"`.
 
-**`rater`** — the user identifier of the person issuing this rating.
+**`rater`** — the user identifier of the person issuing the rating.
 
-**`item`** — the identifier of the thing being rated. For posts, this is a content identifier (CID, URL, etc.). For users, this is a user identifier. For tags, this is the normalized tag string.
+**`target`** — the identifier of the entity being rated.
 
-**`item_type`** — disambiguates the type of the item identifier, since the same string could in principle identify different things.
+**`target_type`** — identifies the target as a post, user, or category. This disambiguates identifiers that might otherwise have the same string representation.
 
-**`ratings`** — a map from dimension name to value in [-1, +1]. Omitted dimensions are treated as 0. An empty ratings map is a valid retraction (see Section 2.3).
+**`category`** — the normalized category name along which the target is being rated.
 
-**`timestamp`** — Unix timestamp of when the rating was issued. Used for ordering within a user's rating history. Not used for recency weighting in affinity calculation (see Section 4.2).
+**`value`** — a number in [-1, +1], or `null` to retract the rating.
 
-**`public`** — if `false`, this record is stored locally only and never transmitted to other peers. It still influences the local user's graph traversal and effective scores. If `true`, it is published and may be retrieved by other peers during graph traversal.
+**`timestamp`** — the Unix timestamp at which the rating was issued. Used to determine which record is current for a given user, target, and category. It is not used as a recency weight in aggregation.
 
-**`signature`** — a cryptographic signature over all other fields, using the rater's private key, proving authenticity and preventing tampering. The exact signature scheme is specified in the Layer 3 (Identity) document.
+**`public`** — if `false`, the record is private and is not transmitted to peers. It still affects the issuing user's local graph and aggregates. If `true`, the record is eligible for distribution to peers.
 
-### 2.2 Rating Records as a Collection
+**`signature`** — a cryptographic signature over all other fields, using the user's private key. The exact signature scheme is specified in `identity.md`.
 
-Each user's public rating records are published as a single retrievable collection — an array of rating record objects ordered by timestamp ascending. The wire format is JSON (see Section 7 for format rationale and alternatives).
+The tuple `(user, target, category)` identifies the logical rating being updated. A user may have only one current value for a given tuple, although historical superseded records may be retained.
 
-The collection should support retrieval in full. For most users the collection will be small enough (a few hundred to a few thousand records) that full retrieval is not burdensome. For prolific raters with very large collections, clients should support **cursor-based pagination** using timestamp as the cursor: a request may include an `after` parameter specifying a Unix timestamp, and the response returns only records with `timestamp` strictly greater than that value, up to a page size limit. The recommended default page size is 500 records. A response that returns fewer records than the page size indicates the end of the collection.
+### 2.2 Record Discovery and Exchange
 
-The collection object's `generated` field serves as a freshness indicator; clients should re-fetch if the cached copy's `generated` timestamp is older than their staleness threshold.
+Rating records are discovered and exchanged lazily as clients traverse the graph and request information relevant to their own calculations.
+
+The default exchange should return complete matching rating records rather than requiring a separate inventory request followed by a second request for each record's payload. Rating records are lightweight enough that this two-stage process would often waste bandwidth.
+
+Clients may bundle additional records or cached records when useful, but such bundling is an optimization, not a requirement. A receiving client verifies records locally and determines their current status according to the rules in §2.3.
+
+A client need not retrieve every record belonging to every user. It may limit discovery and exchange according to its available resources and the user's configured preferences. Any resulting aggregates are provisional with respect to the records and graph currently known to that client.
+
+Private records must never be included in peer exchanges, including cached collections.
 
 ### 2.3 Updating and Superseding Ratings
 
-A user may issue a new rating record for an item they have previously rated. The most recent record (by timestamp) for a given `(rater, item, item_type)` tuple supersedes all earlier records for that tuple. Clients should discard older records for the same tuple when a newer one is available.
+A newer record for the same `(user, target, category)` tuple supersedes the older record.
 
-A rating may be retracted by issuing a new record with an empty `ratings` map. A retracted rating is treated identically to no rating having been issued.
+The comparison is based on timestamps:
 
-### 2.4 Self-Rating Convention
+- A strictly later timestamp supersedes an earlier timestamp.
+- Equal timestamps do not establish an ordering.
+- A client may retain whichever equal-timestamp record it encountered first. Different clients may consequently disagree until the user issues a record with a clearly later timestamp.
 
-When a user publishes a post, the client should automatically issue a synthetic self-rating of +1 for that post on all active dimensions — a normal rating record in every respect, signed by the author and included in their public collection. This gives the author's own posts a baseline positive score before any external ratings arrive.
+Records are taken whole. A newer record replaces the previous value entirely; fields are not merged.
 
-Self-ratings are fully overridable. An author who wishes to disavow a previous post can retract or replace the self-rating with a lower value, and the post will be treated accordingly by the scoring algorithm with no special cases. No implicit algorithmic rule grants posts a baseline score; the self-rating record is the entire mechanism.
+A retraction is a normal rating record whose `value` is `null`. It supersedes an earlier numeric value just as any other newer record does. It must remain available as the current version of the rating so that older values are not inadvertently resurrected when records are exchanged.
 
-### 2.5 Rating Aggregation Across Versions
+A later numeric record reinstates a rating after retraction.
 
-Because rating records reference version identifiers rather than stable post identifiers (see metadata.md §2), computing an aggregate for a post requires collecting ratings across its relevant versions. The procedure is:
+There are therefore three relevant states:
 
-1. Build the canonical version history for the post's stable `id`, and categorize the other metadata files that claim it (metadata.md §5.2).
-2. Collect all rating records whose `item` is a version in the canonical history, and those whose `item` is a memory-holed version. Ratings of a memory-holed version still count: an author cannot erase the response to their own words by skipping a version.
-3. Collect ratings of third-party introductions and unsigned copies that name the claimed author, but only where content identity is confirmed (metadata.md §4.3) against an author-signed version. Introductions are confirmed against author-signed versions only — never against one another. A post with no author-signed version at all (a bridged post whose author has not joined neusnet) has no canonical history; its current version, the *anchor*, stands in for it: the anchor's own ratings are collected, and introductions are confirmed against it.
-4. Exclude ratings whose `item` is a false-claimant version. A false claimant's version remains a post in its own right — ratings of it build affinity with *its* named author, not the canonical author — it is only kept out of this post's aggregate.
-5. **Deduplicate by rater**: for each rater, retain only their most recent rating record across all collected versions (by timestamp). This prevents score inflation from a rater re-rating multiple versions of the same post, and prevents authors from self-boosting by publishing many near-identical versions each carrying a self-rating of +1. Implementations must agree on three details:
-   - Records are taken whole: a later record replaces an earlier one entirely, not dimension by dimension (consistent with §2.3).
-   - A retraction (an empty `ratings` map) is a record like any other. A rater whose most recent record is a retraction has withdrawn their rating, and their earlier ratings of *other* versions are not resurrected.
-   - If one rater has two records with the same timestamp, the one for the version earlier in this order wins: canonical versions (newest first), then memory-holed versions, then confirmed introductions and unsigned copies. This keeps the result independent of the order in which records happen to arrive.
-6. Apply the trust graph algorithm (Sections 4–5) to the deduplicated rating set. In particular, a rater contributes to the derived affinity (§4.2) of the post's author and tags once per post rather than once per version, and a viewer's own most recent rating of any version of the post serves as their direct rating of the post (§5).
+1. **No record:** the user has not issued a rating for this target and category.
+2. **Numeric value:** the user has an active rating, including an explicit neutral value of zero.
+3. **Null value:** the user has explicitly retracted the rating.
 
-This procedure assumes every rating record it is given has already been validated and its signature verified (identity.md §4.4). Ratings of versions that are not part of the post, and records that are not ratings of posts, are simply not collected.
+Historical superseded records may be retained for auditing or recovery, but only the newest known record determines the current rating. The normative default is to share and request only the newest known record for each tuple.
+
+### 2.4 Visibility and Privacy
+
+Visibility determines whether a record may be distributed; it does not change the record's timestamp precedence.
+
+A private rating affects only the issuing user's local graph and calculations. It is not shared with peers. This applies equally to private numeric ratings and private retractions.
+
+A user's private records may affect inferred relationships, paths, affinities, and aggregates in that user's local graph. Those derived results must also remain private: clients must not transmit inferred relationships, path results, or aggregates that depend on private records.
+
+Peers exchange rating records, not computed aggregates or inferred relationships. Each peer computes its own graph and derived results from the records it has received.
+
+Changing a previously public rating to private does not recall copies that other peers have already received. If the newest record is private, the issuing client must not distribute it, and must not continue distributing an older public record for the same tuple.
+
+Consequently:
+
+- A newer private record suppresses future sharing of the earlier public record.
+- Peers that already received the earlier public record may continue using it until they receive a newer public record.
+- A private retraction of a previously public rating does not notify peers that the rating was withdrawn.
+- To publicly withdraw a previously published rating, the user must issue a public null-valued record.
+- To make a rating public again after a newer private record, the user must issue a new, later numeric record with public visibility.
+
+A public null-valued record informs peers that the rating has been retracted. Conforming clients must prefer it over an older numeric record once received. There is no guarantee that every peer will receive the retraction, or that peers will erase historical copies.
+
+Visibility controls distribution, not precedence. A public record does not take precedence over a newer private record merely because it is public.
+
+### 2.5 Timestamp Plausibility
+
+Timestamps are supplied by the user and are not globally synchronized. Their ordering is meaningful only within the same user's records for the same `(target, category)` tuple.
+
+Clients may apply plausibility checks to future timestamps. An implausibly future-dated record may be temporarily withheld from current calculations and reconsidered later. Such records should not be permanently discarded solely because their timestamps appear to be in the future.
+
+The tolerance for future timestamps is a client policy. The protocol does not require a global clock or a network-wide timestamp authority.
+
+### 2.6 Rating Aggregation Across Post Versions
+
+Rating records reference post versions rather than an abstract stable post identity (see `metadata.md`). Computing an aggregate for a post therefore requires collecting ratings across its relevant versions.
+
+The procedure is:
+
+1. Build the canonical version history for the post's stable identity and categorize the other metadata files that claim it (`metadata.md` §5.2).
+2. Collect rating records whose targets are versions in the canonical history, including memory-holed versions. Ratings of a memory-holed version still count: an author cannot erase the response to their own words by skipping a version.
+3. Collect ratings of third-party introductions and unsigned copies that name the claimed author, but only where content identity is confirmed (`metadata.md` §4.3) against an author-signed version. Introductions are confirmed against author-signed versions only, never against one another. A post with no author-signed version at all (a bridged post whose author has not joined neusnet) has no canonical history; its current version, the *anchor*, stands in for it. The anchor's own ratings are collected, and introductions are confirmed against it.
+4. Exclude ratings whose targets are false-claimant versions. A false claimant's version remains a post in its own right, and ratings of it may contribute to relationships involving that post and its named author. It is simply not included in the canonical post's aggregate.
+5. **Deduplicate by user and category:** for each user and category, retain only their most recent record across all collected versions. This prevents repeated ratings of different versions from counting as separate evidence. Records are taken whole, consistent with §2.3. A null-valued record is treated like any other newest record and withdraws that user's rating; an earlier rating of another version is not resurrected. If records for the same user and category have equal timestamps, use the same tie-handling rule as §2.3; clients may disagree until a later record resolves the ambiguity.
+6. Apply the graph and aggregation rules in Sections 3–5 to the resulting current ratings.
+
+This procedure assumes every rating record has already been validated and its signature verified (`identity.md` §4.4). Ratings of versions that are not part of the post, and records that are not ratings of posts, are not collected.
 
 The default feed view shows the current version with the aggregate score. Clients should additionally:
+
 - Provide per-version score breakdowns in the version history view.
-- Visually flag posts where ratings are substantially concentrated on a version other than the current one, as this may indicate content was materially changed after attracting significant attention.
+- Visually flag posts where ratings are substantially concentrated on a version other than the current one, as this may indicate that content was materially changed after attracting significant attention.
 
 ---
 
-## 3. Derivative Ratings: Posts as Mediators
+## 3. Inferred Relationships
 
-Posts connect users (as authors) to tags (as categorizations). Ratings flow through posts in both directions, producing derivative signals about authors and tags from post ratings, and derivative signals about posts from author and tag affinities.
+### 3.1 The Three-Entity Structure of a Rating
 
-### 3.1 From Post Ratings to Author and Tag Affinity
+Every rating connects three entities:
 
-When user U rates a post P on dimension D with value V:
+- The **user** issuing the rating.
+- The **target** being rated.
+- The **category** in which the target is being rated.
 
-- **Author affinity**: U's rating contributes V to U's affinity with P's author on dimension D.
-- **Tag affinity**: U's rating contributes V to U's affinity with **each** tag attached to P on dimension D, at full value V per tag.
+Two ratings can imply a relationship between the entities that differ when they share exactly two of these three fields.
 
-No dilution is applied across tags. If a post is tagged #funny, #cat, and #cute, a rating of +1 contributes +1 to each of those three tag affinities independently. The tags are all genuinely applicable and the rating is a genuine endorsement of all of them. If U dislikes #cat but likes #funny and #cute, the post will receive two positive and one negative tag contribution when its effective score is computed — the correct behavior, achieved without any dilution.
+These inferences apply uniformly regardless of the entity types involved. No special rules apply merely because an entity is a user, post, or category.
 
-### 3.2 From Author and Tag Affinities to Post Scores
+### 3.2 Shared Target and Category: User Relationships
 
-When computing the effective score of a post P for user U on dimension D, there are up to three contributing terms:
+When two different users rate the same target in the same category, their ratings imply a relationship between those users.
 
-- U's **direct rating** of P (if any)
-- U's **effective affinity with P's author** on dimension D
-- The **mean of U's effective affinities with each tag** attached to P on dimension D — all tag affinities averaged together into a single term
+- Similar ratings imply positive affinity.
+- Opposing ratings imply negative affinity.
+- The magnitude of the relationship reflects the degree of agreement or disagreement.
 
-These three terms are themselves averaged to produce the effective post score. This ensures that tags collectively carry the same weight as the author signal and the direct rating, regardless of how many tags a post has. See Section 5 for the full formula.
+For example, two users who both rate a post positively in `philosophy` exhibit positive affinity with one another in that category. If one rates it positively and the other negatively, the implied affinity is negative.
 
-### 3.3 Direct User and Tag Ratings
+The inferred relationship is bidirectional. The shared ratings do not establish which user should influence the other more.
 
-A user may rate another user or a tag directly, without reference to any specific post. These direct ratings are combined with post-derived signals in affinity computation, as described in Section 4.
+An explicit rating of one user as a target by another user is different: it establishes a directed relationship.
 
----
+### 3.3 Shared User and Target: Category Relationships
 
-## 4. Affinity
+When the same user rates the same target in two different categories, the ratings imply a relationship between those categories.
 
-Affinity is the relationship between user U and any other node (user or tag) in the trust graph on a given dimension. It is a value in [-1, +1] representing the strength and direction of U's expressed preference relationship with that node.
+For example, if a user rates a post positively in `philosophy` and positively in `important`, that is evidence of a positive relationship between those categories. If the ratings have opposing signs, the inferred relationship is negative.
 
-### 4.1 Two Components: Derived and Direct
+This inferred relationship is bidirectional. The two ratings establish an association but do not establish a direction of implication between the categories.
 
-A user or tag may have two sources of affinity signal from U:
+An explicit rating of one category as a target in another category is different: it establishes a directed relationship, as described in §3.6.
 
-- **Derived affinity**: the simple average of U's ratings of all posts relating to the node in question (authored by, or tagged with, that node), on dimension D.
-- **Direct affinity**: any explicit direct rating U has issued for that user or tag on dimension D.
+### 3.4 Shared User and Category: Target Relationships
 
-These are combined into a **composite affinity** using a configurable weight ratio. The suggested default is **2:1 derived-to-direct**:
+When the same user rates two different targets in the same category, the ratings imply a relationship between those targets.
 
-```
-composite_affinity(U, N, D) =
-    (2 × derived_affinity(U, N, D) + 1 × direct_affinity(U, N, D)) / 3
-```
+For example, if a user rates two posts positively in `philosophy`, that is evidence of a positive relationship between those posts in that category. If the ratings have opposing signs, the inferred relationship is negative.
 
-When only one signal is present, it is used as-is (no phantom zero is injected for the missing signal).
+This inference applies to any target types, including users, posts, and categories. The inferred relationship is bidirectional.
 
-The 2:1 default reflects the intuition that consistent behavior across many posts represents more deliberate accumulated judgment than a single explicit declaration. The ratio is user-configurable; a user who trusts their own explicit declarations more may increase the direct weight, while one who prefers their behavior to speak for itself may reduce it.
+### 3.5 Combining Evidence
 
-This design produces natural **redemption and fall-from-grace dynamics**: an author you have explicitly downrated can accumulate enough positive post ratings over time to rise above your visibility threshold, while an author you have explicitly uprated can fall below it through sustained poor content.
+The three shared-field rules above describe pairwise inferred relationships. If two ratings share fewer than two fields, they do not imply a pairwise relationship under these rules. If all three fields are identical, they refer to the same logical rating and are handled by the record update rules in §2.3.
 
-The same logic applies symmetrically to tags.
+Multiple pieces of evidence may imply relationships between the same ordered pair of entities. Their contributions are combined using the aggregation mechanism in Section 5 to produce one effective relationship for that ordered pair.
 
-### 4.2 Derived Affinity Calculation
+Inferred relationships are bidirectional: the same inferred evidence contributes equally in both directions.
 
-```
-derived_affinity(U, N, D) = mean({ rating(U, P, D) : P is a post authored by or tagged with N, rated by U on D })
-```
+Explicit directed relationships and inferred bidirectional relationships are separate sources of evidence. Neither automatically overrides the other. They are combined through the same aggregation mechanism, with the result potentially differing by direction because explicit relationships may be one-way.
 
-If U has issued no ratings contributing to this set, `derived_affinity(U, N, D) = 0`.
+### 3.6 Explicit Category Relationships
 
-**No recency weighting is applied.** All ratings contribute equally regardless of age. This produces reputational inertia: a long positive track record is not easily overturned by a single recent negative rating, and a first bad impression does not persist indefinitely in the face of sustained positive behavior.
+A user may explicitly rate a category as a target in another category.
 
-### 4.3 Confidence
+For example, a rating of category `philosophy` in category `important` expresses a directed relationship:
 
-The number of data points underlying derived affinity is tracked as a **confidence** value:
+`philosophy → important`
 
-```
-confidence(U, N, D) = count({ ratings contributing to derived_affinity(U, N, D) })
-```
+This means that a rating or association expressed in `philosophy` may contribute to an evaluation in `important`. It does not imply the reverse relationship.
 
-Confidence does not gate the use of affinity in computation — a single data point produces a valid affinity value. Confidence is available to client software as a display signal (e.g. a "limited data" indicator). The protocol does not mandate any confidence threshold.
+Explicit category relationships are directed. They are not automatically mirrored. An inferred relationship between the same categories may still contribute bidirectionally, independently of the explicit relationship.
 
-### 4.4 Unknown Nodes
+There is no separate category hierarchy protocol. A client may present categories in nested or hierarchical interfaces, but those presentations are derived from category relationships and are not encoded by punctuation, prefixes, or a special taxonomy structure.
 
-U's affinity with any node they have never directly or derivatively rated is `0`. Effective affinity (Section 4.5) may be non-zero due to graph traversal. This is the correct behavior: U has no personal opinion, but their network does, and that opinion is imported at appropriately decayed weights.
+### 3.7 Transitive Inference Through Users
 
-At cold start, when U has rated nothing, all effective affinities are 0 and all effective post scores are 0. The graph fills in as U rates content, initially producing values near {−1, 0, +1} and gradually averaging into more nuanced values as more data accumulates.
+Relationships can propagate through users.
 
-### 4.5 Effective Affinity via Graph Traversal
+If user A has an effective affinity `a` for user B in category C, and B rates target T with value `r` in category C, the path implies a contribution of:
 
-U's **effective affinity** with any node N incorporates not only U's own composite affinity but also the composite affinities of peers at greater graph distances, decayed by distance.
+`a × r`
 
-It is computed by a **breadth-first traversal** of the trust graph outward from U, keeping a running total (an *accumulator*) for each node reached. When the traversal finishes, the accumulator for node N *is* `effective_affinity(U, N, D)`. Every accumulator starts at 0, which is also the result for any node the traversal never reaches (§4.4).
+to A's evaluation of T in category C.
 
-A **peer** is a user who has published a rating collection — someone there is something to import from. Users who have never published ratings can still receive affinity (they appear in accumulators), but they cannot relay it onward.
+The relationship is category-relative. A's affinity for B in another category does not automatically apply.
 
-**Hop 0 — U's own view.** For every node N, user or tag, with non-zero `composite_affinity(U, N, D)`, add that value to N's accumulator. This includes U's own private ratings (§2.1, `public`), which only U ever sees. U itself is hop 0.
+This is ordinary graph-path inference, not a new rating record. The contribution is derived from the relationships and rating already present in the graph.
 
-**Hop 1 peers.** Every peer P ≠ U with non-zero `composite_affinity(U, P, D)` is a hop-1 peer, with
+### 3.8 Transitive Inference Through Categories
 
-```
-import_weight(P) = composite_affinity(U, P, D) × decay
-```
+Relationships can also propagate through categories.
 
-**Hop H (H = 1, 2, 3, ...).** For each hop-H peer P — retrieving P's public rating collection, or a cached copy from a proximal peer — and each node N for which `composite_affinity(P, N, D)` is non-zero:
+If user A rates target T in category C1 with value `r`, and there is an effective directed relationship `a` from C1 to C2, the path implies a contribution of:
 
-- If N is a user who has already been assigned a hop number ≤ H (including U), **skip** this encounter entirely (see "Shortest path only" below).
-- Otherwise, add `import_weight(P) × composite_affinity(P, N, D)` to N's accumulator. Call this amount P's *contribution* to N.
+`a × r`
 
-Once every hop-H peer has been processed, each user Q newly reached during that hop who is a peer becomes a **hop-(H+1) peer**, with
+to A's evaluation of T in category C2.
 
-```
-import_weight(Q) = decay × (the sum of all contributions into Q during hop H)
-```
+Direction matters. A relationship from C1 to C2 permits propagation from C1 into C2. It does not automatically permit propagation from C2 into C1.
 
-Traversal continues until no new peers remain, or until the client's compute/bandwidth budget is exhausted — in which case the accumulators reflect the hops completed so far.
+The relationship may be explicit or inferred. An inferred category relationship is bidirectional; an explicit relationship is directed as described in §3.6.
 
-In words: a peer's import weight is the signal that arrived at that peer, attenuated by one more step of decay. Unrolled along a single path U → P₁ → P₂ → … → P_H, it is the product of the composite affinities along each link times `decay^H`:
+This is also ordinary graph-path inference, not a new rating record.
 
-```
-import_weight(P_H) = composite_affinity(U, P₁) × composite_affinity(P₁, P₂) × … × composite_affinity(P_{H-1}, P_H) × decay^H
-```
+### 3.9 No Special Authorship Relationship
 
-Note that this is *not* `composite_affinity(U, P_H, D) × decay^H`: U may have no direct affinity with a distant peer at all (reaching such peers is what the traversal is for), and a peer's influence on U is mediated by the chain of affinities through which U reaches them. Appendix B works through an example.
+Authorship is provenance, not a special rating or graph relationship. The protocol does not create an automatic edge between an author and a post.
 
-**Shortest path only.** Each user is assigned the hop number of the shortest path by which it is first reached, and keeps that number. A later encounter with a user who already has a hop number ≤ the current hop — a longer path, or an equal-or-shorter one that was already resolved — is discarded entirely: it adds nothing to that user's accumulator and does not affect its import weight. If a user is first reached by several paths of the *same* minimal length (that is, from several peers in the same hop), all of those contributions are summed. Tags are never peers and are never assigned a hop number, so every path's contribution to a tag's accumulator counts.
+An author may publish a completely unrated post. If the author chooses to rate their own post, that is an ordinary rating record and participates in inference and aggregation exactly like any other rating.
 
-The **decay factor** is user-controlled in [0, 1], configurable per dimension. Suggested default: `0.5`.
-
-### 4.6 Sign Inversion and the Enemy-of-My-Enemy Principle
-
-No special handling is required for negative affinity. Because affinity is a signed multiplier applied to rating values, negative affinity automatically inverts imported signals:
-
-- Peer with affinity +0.8 endorses something → positive contribution to U's view.
-- Peer with affinity −0.8 endorses something → negative contribution (their endorsement is a warning).
-- Peer with affinity −0.8 condemns something → positive contribution (their condemnation is a mild endorsement).
-
-The enemy-of-my-enemy effect emerges from the arithmetic with no additional logic.
+Clients may encourage authors to categorize their posts, particularly in the conventional categories the author has selected for their own feed filters. Such encouragement is client behavior, not a protocol requirement, but highly recommended to initiate some connection of a new post to the existing trust graph.
 
 ---
 
-## 5. Effective Post Scores
+## 4. Graph Paths and Effective Relationships
 
-The effective score of a post P for user U on dimension D is the mean of up to three terms: direct rating, author affinity, and the mean of tag affinities. Tags are averaged among themselves first, so that the collective tag signal counts as one term regardless of how many tags a post has — equal in weight to the direct rating and author affinity.
+### 4.1 Directed Relationship Graph
 
-```
-terms = []
+The relationships described in Section 3 form a directed graph over users, posts, and categories.
 
-if direct_rating(U, P, D) ≠ 0:
-    terms.append(direct_rating(U, P, D))
+Explicit relationships are directed. Inferred pairwise relationships are bidirectional. The graph may therefore contain directed paths, bidirectional edges, and cycles.
 
-if effective_affinity(U, author(P), D) ≠ 0:
-    terms.append(effective_affinity(U, author(P), D))
+The effective relationship between two entities in a particular category context is derived from the current relevant records and the graph paths connecting them.
 
-tag_affinities = [effective_affinity(U, T, D) for T in tags(P)
-                  if effective_affinity(U, T, D) ≠ 0]
-if len(tag_affinities) > 0:
-    terms.append(mean(tag_affinities))
+The graph is not restricted to user-to-user paths. Paths may pass through posts and categories, and all entity types participate under the same rules.
 
-effective_score(U, P, D) = mean(terms)   // 0 if terms is empty
-```
+### 4.2 Edge Strength
 
-For a post with several versions (§2.5), `direct_rating(U, P, D)` is U's most recent rating of any version of P that is counted in the aggregate.
+Each direct or inferred relationship has a signed strength in [-1, +1].
 
-A post tagged #funny, #cat, and #cute where U has affinity +1 for #funny, +1 for #cute, and −0.5 for #cat produces a single tag term of mean(+1, +1, −0.5) = +0.5, which then averages with the author affinity and direct rating on equal footing. A post with fifty tags is not dominated by its tag signals any more than a post with two tags.
+When multiple pieces of evidence contribute to the same ordered pair, they are combined using the direct relationship aggregation rules in Section 5. This produces one effective directed edge for that ordered pair.
 
-Division by zero (empty terms list) returns 0.
+An inferred bidirectional relationship contributes to both directions. An explicit directed relationship contributes only in its specified direction unless independent evidence establishes a relationship in the reverse direction.
 
-### 5.1 Visibility Threshold
+A path may traverse an edge only in its permitted direction.
 
-Each user configures a **visibility threshold** per dimension. Posts whose effective score falls below the threshold on a given dimension are excluded from the default feed view.
+### 4.3 Path Strength
 
-Suggested default: `0` on all dimensions (only net-positive posts appear).
+The strength of a path is the product of the strengths of its edges.
 
-The threshold applies to the **default feed view only**. Posts below the threshold remain accessible via direct link, explicit author search, explicit tag search, or parent-post navigation. The system models user preferences, not user permissions.
+For a path containing edges with strengths `e1`, `e2`, ..., `en`:
 
-### 5.2 Combined Score Across Dimensions
+`path_strength = e1 × e2 × ... × en`
 
-For display purposes, client software may present a single combined score as a user-configured weighted average of per-dimension scores. The protocol does not mandate a combination formula; displaying per-dimension scores separately is equally valid.
+Negative strengths invert the sign of subsequent contributions. This naturally produces effects such as the enemy-of-my-enemy principle without special-case logic.
+
+Path strength is independent of graph distance discounting. The distance parameter in Section 5 is applied during aggregation, not while discovering or evaluating individual paths.
+
+### 4.4 Shortest Paths
+
+Only shortest paths between two entities are used to determine their effective relationship.
+
+Shortest-path discovery is structural: it depends on the graph's edges and directions, not on their numeric strengths. A path with zero strength still counts as a path and may be among the shortest paths.
+
+If several distinct shortest paths connect the same ordered pair, calculate the strength of each path and take their arithmetic mean.
+
+Longer paths do not contribute when a shorter path exists. This prevents arbitrarily long cycles and detours from accumulating influence.
+
+Zero-strength paths must not be pruned during traversal. They remain part of the structural graph and count when averaging equally short paths.
+
+### 4.5 Effective Relationship
+
+The effective relationship from entity A to entity B is the arithmetic mean of the strengths of all distinct shortest directed paths from A to B.
+
+If no directed path exists, the entities have no effective relationship through the currently known graph. This is not evidence of a zero relationship; it means the relationship is unknown or unreachable.
+
+If the shortest paths average to zero, the effective relationship is explicitly zero. This is distinct from no path.
+
+Only one effective relationship is used for each ordered pair in subsequent graph traversal and aggregation.
 
 ---
 
-## 6. Tag Normalization and Hierarchy
+## 5. Aggregate Ratings
 
-### 6.1 Flat Tag Normalization
+### 5.1 Overview
 
-Tag strings must be normalized before use as identifiers. The normalization procedure for a single tag component is:
+An aggregate rating estimates how an evaluator regards a target in a particular category, using the evaluator's own ratings and the ratings of reachable sources in their graph.
 
-1. Apply Unicode NFKC normalization.
-2. Lowercase all characters using Unicode locale-independent case folding.
-3. Strip leading and trailing whitespace and punctuation.
-4. Remove all punctuation characters except hyphens.
-5. Convert runs of whitespace to a single hyphen.
-6. Collapse runs of hyphens to a single hyphen.
-7. Strip any remaining leading or trailing hyphens.
+The calculation is category-specific. A source's rating of a target in another category is not direct evidence for the category currently being evaluated, although it may contribute to graph relationships that affect the current calculation.
 
-The result matches `[a-z0-9][a-z0-9-]*[a-z0-9]` or a single `[a-z0-9]` character. A component normalizing to the empty string is invalid and the entire tag must be rejected.
+No computed aggregate is transmitted as a protocol rating. Each client derives aggregates locally from the rating records and graph it currently knows.
 
-Examples:
+### 5.2 Sources
 
-| Input | Normalized |
-|-------|-----------|
-| `"Funny"` | `funny` |
-| `"Science Fiction"` | `science-fiction` |
-| `"#cat"` | `cat` |
-| `"C++"` | `c` |
-| `"well-being"` | `well-being` |
+For an evaluator A, target T, and category C, a **source** is any entity that has a current, non-null rating of T in C and is reachable from A through the directed graph.
 
-### 6.2 Hierarchical Tags
+A source may be a user, post, or category. There are no entity-type exceptions.
 
-Tags may express a containment relationship using dot notation:
+The evaluator's own current rating is also a source, with self-affinity +1 and graph distance zero.
 
-```
-#parent.child
-#grandparent.parent.child
-```
+Each distinct source contributes at most once to a given aggregation. Multiple paths to the same source are combined into one effective relationship before its rating contributes.
 
-For example, `#philosophy.epistemology` asserts that this post is about epistemology as a subtopic of philosophy. `#philosophy.epistemology.reliabilism` asserts a three-level hierarchy.
+A source that is unreachable does not contribute. It is not treated as a zero-affinity source.
 
-A hierarchical tag is normalized by applying the flat normalization procedure (Section 6.1) independently to each dot-separated component, then rejoining with dots. The full normalized form matches `[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*`. Leading, trailing, and consecutive dots are invalid and the tag must be rejected.
+A source whose effective affinity is zero contributes neither signed evidence nor influence mass.
 
-Examples:
+A source whose rating is explicitly zero does contribute influence mass if its effective affinity is nonzero. Its rating contributes zero to the signed sum, thereby moderating the aggregate toward neutrality.
 
-| Input | Normalized |
-|-------|-----------|
-| `"Philosophy.Epistemology"` | `philosophy.epistemology` |
-| `"Science Fiction.Hard SF"` | `science-fiction.hard-sf` |
-| `"#philosophy.epistemology.reliabilism"` | `philosophy.epistemology.reliabilism` |
+A source with a current null-valued record contributes nothing.
 
-The dot separator is the only character with structural meaning in a tag. Hyphens are word separators within a component and carry no hierarchical significance. `#philosophy-basement` is a flat tag whose name contains "philosophy"; `#philosophy.basement` is a tag asserting that basement is a subtopic of philosophy. These are distinct tags with different semantics.
+### 5.3 Source Contributions
 
-No depth limit is specified at the protocol level. Clients may truncate display of deeply nested tags and may reasonably decline to propagate tags exceeding a practical depth (four or five levels covers virtually all real use cases).
+For each source `i`:
 
-**Relationship to flat multi-tagging.** Tagging a post `#philosophy.epistemology.reliabilism` is largely equivalent, for search and feed purposes, to tagging it `#philosophy #epistemology #reliabilism` — both make the post findable by any of the three component terms. Authors are not required to use dot syntax; flat multi-tagging achieves most of the same results and may feel more natural. The dot syntax offers two additional things flat tags cannot express in a single tag: a prefix query that narrows to a specific branch (searching `#philosophy.epistemology` finds that subtree but not `#psychology.epistemology`), and an explicit authorial claim about how the concepts relate to each other in this post. For most everyday tagging, the choice is a matter of style.
+- `r_i` is the source's current rating of target T in category C.
+- `a_i` is the evaluator's effective relationship to that source in the context of C.
+- `d_i` is the shortest directed graph distance from the evaluator to the source.
 
-### 6.3 Tag Search Semantics
+The source contributes:
 
-When a user or client searches for or subscribes to a tag `#X`, the query matches any post whose tag set contains a tag where `X` appears as any dot-separated component — at any position in the hierarchy. Specifically:
+`a_i × r_i`
 
-- A search for `#philosophy` matches `#philosophy`, `#philosophy.epistemology`, `#philosophy.epistemology.reliabilism`, and any other tag with `philosophy` as a component.
-- A search for `#epistemology` matches `#epistemology`, `#philosophy.epistemology`, `#psychology.epistemology`, and any other tag with `epistemology` as a component.
-- A search for `#philosophy.epistemology` matches `#philosophy.epistemology` and `#philosophy.epistemology.reliabilism` — tags that begin with `philosophy.epistemology` as a contiguous prefix — but not `#epistemology` alone or `#psychology.epistemology`.
+to the signed evidence at its distance layer.
 
-The general rule: a query for `#X` matches any tag that contains `X` as a component. A query for `#X.Y` (or any multi-component prefix) matches any tag that contains the sequence `X.Y` as a contiguous prefix. This means:
+Its influence mass is:
 
-- Searching a **single component** finds all uses of that concept regardless of where it appears in any hierarchy.
-- Searching a **multi-component prefix** narrows to a specific branch of the hierarchy and its descendants.
+`|a_i|`
 
-This design ensures that using hierarchical dot syntax never harms discoverability. A post tagged `#philosophy.epistemology` is always findable by someone searching `#epistemology`, so posters are not penalized for providing more precise hierarchical context.
+A source's affinity is category-relative. The same source may have different effective relationships to the evaluator in different categories.
 
-Clients should offer users the option to search a tag **exactly** — matching only posts tagged with that precise string and no sub-components — for cases where a user wants to see only the top-level tag without its entire subtree.
+### 5.4 Distance Layers and Aggregation Parameters
 
-### 6.4 Channels: Persistent Tag-Rooted Feeds
+Two configurable parameters control aggregation:
 
-A **channel** is a user-defined, persistent, mutable collection of tags that a client treats as a unified feed. The term is chosen deliberately: just as [IRC](https://datatracker.ietf.org/doc/html/rfc1459) channels are demarcated by `#`, neusnet channels are rooted in `#`-prefixed tags. The hash that marks a tag and the hash that marks an IRC channel are the same symbol doing the same job — `#philosophy` is at once a tag on a post and the name of a channel a user can inhabit.
+- **α (alpha)** controls how the amount of evidence within each distance layer affects that layer's contribution.
+- **δ (delta)** controls how much influence more distant layers receive relative to nearer layers.
 
-A channel has:
-- A **root tag** (e.g. `#philosophy`)
-- An optional **local taxonomy** — a set of additional tags the user has chosen to include as if they were subtags of the root, regardless of how individual posters have tagged their posts
-- A **display name**, defaulting to the root tag
+Both parameters are in [0, 1].
 
-The local taxonomy is the user's personal extension of the hierarchical dot syntax into territory the poster hasn't explicitly declared. A user who adds `#epistemology` to their `#philosophy` channel's local taxonomy will see `#epistemology` posts in their `#philosophy` feed even when those posts carry no `#philosophy.*` tag. Their client treats `#epistemology` as a child of `#philosophy` for their own browsing purposes — a private taxonomic assertion that affects only their own view.
+Increasing α corresponds to giving greater weight to averaging within a layer, rather than allowing large numbers of contributions to accumulate.
 
-Channels may have **subchannels**: a `#philosophy` channel might contain a `#philosophy.epistemology` subchannel, which itself might contain a `#philosophy.epistemology.reliabilism` subchannel. The channel hierarchy mirrors the tag hierarchy, but is shaped by the user's own taxonomy rather than derived purely from tag strings.
+Decreasing δ corresponds to giving lesser weight to more distant layers, rather than treating ratings at every distance with the same weight as the evaluator's own.
 
-### 6.5 Trust-Graph Taxonomy Suggestions
+The default client interface should present a single inverse-binding control (increasing α decreases δ, and vice versa); advanced clients may expose α and δ separately, as well as category-specific settings.
 
-Because `#philosophy.epistemology` is automatically included in a `#philosophy` channel by the prefix search rules of §6.3, no suggestion is needed for subtags that already carry the channel's root component. The only suggestions clients need to make are **cross-hierarchy component inclusions**: cases where a tag component appears frequently in trusted content *without* the channel's root prefix, and the user might want to pull it in anyway.
+For each distance layer `d`, calculate:
 
-Concretely: if posts in a user's `#philosophy` channel frequently carry `#philosophy.epistemology` tags, the client may observe that bare `#epistemology` posts — tagged without any `#philosophy` prefix — also exist and might be of interest. The candidate is always the component immediately following the root — `#philosophy.epistemology.reliabilism` suggests `#epistemology`, not `#reliabilism`, since a confirmed `#epistemology` subchannel already reaches `#philosophy.epistemology.reliabilism` through the ordinary prefix rule (§6.3). It can suggest adding `#epistemology` as a local taxonomy extension of the `#philosophy` channel, which would include all posts where `epistemology` appears as a tag segment anywhere, regardless of what surrounds it.
+`S_d = Σ (a_i × r_i)` for all sources at distance d
 
-**Disclosure requirement.** Because the client has no way to know whether a given suggestion is a good one (`#epistemology` — probably welcome) or a poor one (`#basement` — probably too broad), every suggestion must be accompanied by a plain-language description of its exact scope. The suggested wording:
+`W_d = Σ |a_i|` for all sources at distance d
 
-> "Users you trust often tag posts `#philosophy.epistemology`. Would you like to also include posts tagged `#epistemology` (without a `#philosophy` prefix) in your `#philosophy` channel? This will include *all* posts where `epistemology` appears as a tag segment anywhere — for example, `#psychology.epistemology` and bare `#epistemology` alike."
+For layers where `W_d > 0`, calculate:
 
-The user should be presented with meaningful responses beyond simple acceptance:
+`C_d = S_d / W_d^α`
 
-- **Accept**: add the component as a local taxonomy extension of this channel.
-- **Dismiss**: do not suggest this component for this channel again.
-- **Accept and uprate `#X.Y`**: accept the inclusion and issue a positive rating for the tag, signalling to peers that this is a tagging pattern worth propagating.
-- **Dismiss and downrate `#X.Y`**: dismiss the suggestion and issue a negative rating for the tag, signalling that this tagging pattern is poor or unwelcome. Because tag ratings flow through the normal trust graph, this naturally reduces the influence of peers who use the tag heavily and suppresses similar suggestions derived from their tagging behavior.
+Then calculate the shared normalizer:
 
-This reuses the existing tag rating mechanism (ratings.md §3.3) rather than introducing any separate reputation system for tagging quality. Tag quality judgments made at the channel taxonomy UI are the same object as tag ratings made anywhere else, and propagate through the trust graph identically.
+`M = max(W_d^(1 - α))` over all layers where `W_d > 0`
 
-**Top-level discovery.** The most-used root tag components across posts from positive-affinity users form a personal browsable topic index — a starting point for building new channels and exploring beyond existing ones.
+Normalize each layer:
 
-### 6.6 Channels as a Communal Taxonomy Mechanism
+`A_d = C_d / M`
 
-The dot syntax, channel taxonomy, and trust graph compose into a self-reinforcing loop that is worth making explicit.
+Finally, calculate the aggregate:
 
-When a user accepts a taxonomy suggestion — adding `#epistemology` as a subchannel of `#philosophy` in their local channel — and subsequently posts into that channel, their client tags the post `#philosophy.epistemology`. That tagging decision is now visible to their trusted peers as a data point: this user treats epistemology as a subtopic of philosophy. Those peers' clients, seeing this pattern from a trusted source, may in turn suggest the same relationship in their own channel taxonomies. If they accept and post accordingly, the pattern propagates further.
+`R = [Σ (δ^d × A_d)] / [Σ δ^d]`
 
-No explicit taxonomy statement is ever published. No authority declares that epistemology belongs under philosophy. The relationship emerges from the accumulation of individual tagging choices, weighted by trust, surfaced as suggestions, and propagated through acceptance and participation. The result is a living, distributed, trust-weighted ontology that is always overridable by any individual user — and that reflects the actual conceptual framing of each user's community rather than an imposed external classification.
+The sums in the final expression include only layers where `W_d > 0`.
 
-This is also what gives the dot syntax a purpose beyond what flat multi-tagging achieves. A post tagged `#philosophy #epistemology` contributes two independent signals; a post tagged `#philosophy.epistemology` contributes the additional signal that these concepts are related *in this post's framing*. That relational signal is what channel taxonomy inference is built on. The dot syntax is the mechanism by which individual framing choices accumulate into communal taxonomic knowledge.
+The shared normalizer is intentional: a large layer can affect the relative influence of all other layers. It is not a separate normalization performed independently for each distance layer.
+
+Only calculate powers for layers with `W_d > 0`; implementations must not rely on `0^0`.
+
+If every layer has zero influence mass, the aggregate is null.
+
+### 5.5 Parameter Behavior
+
+The endpoints of α have useful interpretations:
+
+- **α = 0:** contributions within each layer are summed before the shared normalization. Larger layers can exert greater influence because they contain more total evidence.
+- **α = 1:** each layer is effectively averaged by its total influence mass before the shared normalization. The shared normalizer is 1, and each represented distance layer receives equal weight before δ is applied.
+- **0 < α < 1:** intermediate behavior between summation and averaging.
+
+The endpoints of δ determine distance weighting:
+
+- **δ = 0:** only distance-zero evidence contributes.
+- **δ = 1:** every represented distance layer receives equal weight.
+- **0 < δ < 1:** more distant layers receive progressively less weight.
+
+The distance-zero layer has weight 1. The next layer has weight δ, the following layer δ², and so on.
+
+The protocol permits α = 0 and δ = 0, including their combination. Implementations must handle these values without undefined arithmetic.
+
+### 5.6 Null and Zero Aggregates
+
+An aggregate is **null** when no usable contribution exists. This includes cases where:
+
+- No relevant current ratings are known.
+- All relevant sources are unreachable.
+- All relevant ratings have been retracted.
+- All reachable sources have zero effective affinity.
+
+A numerical aggregate of zero is different: it means usable evidence exists, but the signed contributions balance to neutrality.
+
+Null must not be silently converted to a numerical zero in the underlying aggregation result. Clients may substitute zero when performing threshold comparisons, as specified in §5.8.
+
+### 5.7 Open-World and Provisional Results
+
+The graph is open-ended. There is no global completeness test, and clients cannot establish that they have discovered every relevant record or path.
+
+An aggregate is therefore provisional with respect to the records and graph currently known to the client.
+
+Discovering a new record may:
+
+- Introduce a new source.
+- Change an effective direct relationship.
+- Introduce a new path or a shorter path.
+- Change the average of multiple shortest paths.
+- Change a category relationship and thereby affect propagation into other categories.
+- Change affinities and aggregates for other targets.
+
+These changes may cascade through multiple graph paths, categories, targets, and users.
+
+Clients are responsible for invalidating cached results and recomputing derived values when relevant records or relationships change. The protocol does not prescribe a particular caching or recomputation implementation.
+
+Different clients may temporarily calculate different aggregates because they know different portions of the graph. Given the same relevant records, graph, and settings, conforming clients should calculate the same result, allowing for ordinary floating-point tolerances.
+
+The mathematical result should not depend on record-discovery order. Implementations should make path averaging and aggregation order-independent apart from negligible floating-point differences.
+
+### 5.8 Filtering and Thresholds
+
+Clients may filter results using aggregate ratings in one or more categories.
+
+The normative default comparison is an inclusive minimum threshold:
+
+`aggregate >= threshold`
+
+Thresholds are in [-1, +1].
+
+For threshold comparisons only, a null aggregate is treated as zero. This does not change the underlying aggregate from null to zero.
+
+For example, with an inclusive minimum threshold:
+
+| Threshold | Null aggregate |
+|-----------|----------------|
+| `-1` | Passes |
+| `-0.5` | Passes |
+| `0` | Passes |
+| `+0.25` | Fails |
+| `+1` | Fails |
+
+An inclusive maximum threshold uses the same null-as-zero substitution:
+
+`aggregate <= threshold`
+
+Thus a null aggregate fails a maximum threshold of `-0.25`, but passes a maximum threshold of `+0.25`.
+
+Clients may additionally support exclusive comparisons and intervals. Under those comparisons, null is still substituted with zero:
+
+- `> 0` excludes both explicit zero and null.
+- `< 0` excludes both explicit zero and null.
+- `>= 0` includes both explicit zero and null.
+- `<= 0` includes both explicit zero and null.
+
+When multiple filter categories are selected, the normative default is to combine them with **AND**: a result must satisfy every selected category's threshold. Clients may offer OR or more elaborate Boolean expressions as optional features.
+
+The normative simple interface should use one global threshold for all selected categories. Advanced clients may allow separate thresholds per category.
+
+Selecting no filter categories means no category-based filtering.
+
+A category with no ratings has a null aggregate and is handled by the same null-as-zero comparison rules. It receives no special exemption from filtering.
+
+---
+
+## 6. Category Normalization
+
+### 6.1 Category Identifiers
+
+Categories are identified by normalized strings. The normalized identifier is globally shared: two users referring to the same normalized name refer to the same category, even if they intended different meanings or use the word differently.
+
+Categories have no owners, creators with privileged control, authoritative definitions, or registration process. A category becomes known when a valid rating record references it as a target or category.
+
+There is no protocol-level alias, translation, or competing-definition mechanism. Users who disagree about whether a category applies to something may express that disagreement through their own ratings.
+
+### 6.2 Canonical Form
+
+A canonical category identifier:
+
+- Uses Unicode NFKC normalization.
+- Uses locale-independent Unicode case folding.
+- Uses hyphens to separate words.
+- Contains only Unicode letters, numbers, combining marks, and hyphens.
+- Has no leading or trailing hyphen.
+- Has no consecutive hyphens.
+
+The Unicode version used for normalization and case folding must be specified consistently by conforming implementations. Implementations must not rely on locale-sensitive casing.
+
+Whitespace runs in user input are normalized to a single hyphen. Consecutive hyphens are collapsed, and leading or trailing hyphens are removed.
+
+Punctuation, symbols, and emoji are not permitted in canonical category identifiers. Clients may offer user-facing normalization of punctuation where the intended word boundaries are clear, but must not silently assign arbitrary semantic meaning to punctuation.
+
+Examples of intended normalization include:
+
+| Input | Canonical form |
+|-------|----------------|
+| `Funny` | `funny` |
+| `Science Fiction` | `science-fiction` |
+| `well-being` | `well-being` |
+| `bob’s burgers` | `bobs-burgers` |
+| `will.i.am` | `will-i-am` |
+| `bits&bobs` | `bits-bobs` |
+
+A category identifier that cannot be normalized to a valid canonical form must be rejected.
+
+### 6.3 Canonical Record Values
+
+Rating records must contain canonical category identifiers. Clients should normalize user input before creating records.
+
+Receivers must validate canonical identifiers and reject noncanonical values rather than silently normalizing them. This ensures that all clients interpret the same record as referring to the same category.
+
+### 6.4 No Encoded Hierarchy
+
+Category identifiers do not encode hierarchy. Dots, prefixes, punctuation, and other string patterns have no structural meaning in the protocol.
+
+A category relationship must be expressed through an ordinary rating of one category as a target in another category, or inferred from the shared-rating rules in Section 3.
+
+Clients may present related categories in nested or hierarchical interfaces, but those structures are derived from graph relationships and remain client-side presentation choices.
+
+There is no protocol-defined containment relation, taxonomy depth, parent category, or exclusive parent-child structure. A category may be related to multiple other categories, and those relationships may be bidirectionally positive or negative (a la `A iff B` or `A xor B`), or directed (a la `if A then B` and not `if B then A`).
 
 ---
 
 ## 7. Wire Format
 
-Rating record collections are encoded as **JSON**. JSON is human-readable, universally supported, easy to debug, and the natural choice for a project likely to attract web developers. The main costs — verbosity from repeated field names, and base64 encoding of binary signatures — are negligible at typical collection sizes.
+Rating records are encoded as **JSON**. JSON is human-readable, widely supported, and easy to debug. The main costs — repeated field names and base64 encoding of binary signatures — are negligible for typical record sizes.
 
-If compactness becomes important in a later version, **[CBOR](https://cbor.io)** is the recommended migration path: it uses an identical data model to JSON and is a near-drop-in replacement with significantly smaller output and native binary support.
+If compactness becomes important in a later version, **[CBOR](https://cbor.io)** is the recommended migration path. It uses a compatible data model and supports native binary values.
 
-A rating record collection is a JSON object:
+A collection of rating records may be represented as:
 
 ```json
 {
   "neusnet_version": 1,
-  "type":    "rating_collection",
-  "owner":   "<user-identifier>",
+  "type":     "rating_collection",
+  "owner":    "<user-identifier>",
   "generated": <unix timestamp>,
-  "records": [ <rating-record>, ... ],
-  "cached": [ <rating-record>, ... ]
+  "records":  [ <rating-record>, ... ],
+  "cached":   [ <rating-record>, ... ]
 }
 ```
 
-**`records`** — the owner's own public rating records, in ascending timestamp order. Every entry's `rater` must equal `owner`.
+**`owner`** — the user identifier associated with the collection.
 
-**`cached`** — cached copies of rating records retrieved from the owner's peers, included to enable fast approximate graph traversal. Each cached record retains its original signature so recipients can verify authenticity and later cross-check against the original source. Neither array may contain a record with `public: false`: private ratings are never transmitted (§2.1). See client-recommendations.md §Cached Rating Distribution for the rationale.
+**`generated`** — the Unix timestamp at which the collection representation was generated. Clients may use this as a freshness indicator.
+
+**`records`** — the owner's own public rating records. Every entry's `rater` must equal `owner`.
+
+**`cached`** — optional cached copies of rating records obtained from other users. Each cached record retains its original signature so recipients can verify its authenticity. Cached records are an exchange optimization, not a separate source of authority or a substitute for local verification.
+
+Neither array may contain a record with `public: false`. Private ratings and derived information that depends on them must never be transmitted.
+
+The collection representation does not imply that all records must be retrieved at once. Clients may exchange matching records incrementally as they discover and traverse the graph.
 
 ---
 
 ## 8. Open Questions
 
-**8.1 Derived-to-direct weight ratio.** The suggested 2:1 default has not been empirically validated. Community feedback and argument about this default are welcome.
+**8.1 Unicode version.** The canonicalization rules require a common Unicode version for normalization and case folding. The specific version should be selected and stated explicitly before implementations are expected to interoperate.
 
-**8.2 Non-Latin tag normalization.** The normalization rules in Section 6 handle Latin-script tags well. Tags in other scripts (Arabic, CJK, Cyrillic, etc.) are not excluded but their behavior under these rules should be tested and the rules extended if needed. The recommended direction is Unicode NFKC normalization as a baseline (which handles compatibility equivalences across scripts) followed by script-specific lowercasing using Unicode's locale-independent case folding rules. CJK tags are likely to be case-insensitive by nature but may need whitespace and punctuation stripping rules analogous to those in Section 6. Contributions from native speakers of non-Latin-script languages are especially welcome here.
+**8.2 Category normalization of punctuation.** The canonical form excludes punctuation and symbols, but clients may provide convenient transformations when the intended word boundaries are clear. Further implementation experience may help refine the recommended user-input behavior without changing the canonical wire format.
 
----
-
-## Appendix A: Notation Summary
-
-| Symbol | Meaning |
-|--------|---------|
-| U | The local user whose view is being computed |
-| P | A post |
-| Q | A peer user |
-| N | Any node (user or tag) |
-| D | A rating dimension |
-| H | Graph distance (hops) from U |
-| decay | User-configured decay factor ∈ [0, 1] |
-| `derived_affinity(U, N, D)` | Mean of U's post ratings relating to node N on D |
-| `direct_affinity(U, N, D)` | U's explicit direct rating of node N on D |
-| `composite_affinity(U, N, D)` | Weighted combination of derived and direct affinity |
-| `effective_affinity(U, N, D)` | Graph-traversal-weighted affinity incorporating peer signals |
-| `effective_score(U, P, D)` | Composite score of post P for user U on dimension D |
-
----
-
-## Appendix B: Worked Example
-
-Alice, Bob, Carol, and Dave are users. `decay = 0.5` throughout. All calculations are on the **True** dimension.
-
-**Setup:**
-- Alice rated Bob's post X: True +1
-- Alice rated Bob's post Y: True −0.5
-- Bob rated Carol's post Z: True +0.8
-- Carol rated Dave's post W: True −1.0
-- No other ratings exist. In particular, none of the posts X, Y, Z, W carries tags, Alice has not rated Z or W herself, and Dave has published no ratings.
-
-The steps below follow the traversal of §4.5: Alice's own view first, then outward one hop at a time, accumulating effective affinities; the effective scores of Z and W then follow from §5.
-
----
-
-**Step 1: Alice's derived affinity with Bob.**
-
-Alice has rated two of Bob's posts: +1 and −0.5.
-
-```
-derived_affinity(Alice, Bob) = mean(+1, −0.5) = +0.25
-```
-
-No direct rating of Bob exists, so `composite_affinity(Alice, Bob) = +0.25`. Bob is Alice's only hop-0 relation, so `effective_affinity(Alice, Bob)` starts at +0.25.
-
----
-
-**Step 2: Bob's import weight (hop 1).**
-
-```
-import_weight(Bob) = composite_affinity(Alice, Bob) × decay
-                   = 0.25 × 0.5
-                   = +0.125
-```
-
----
-
-**Step 3: Bob's composite affinity with Carol.**
-
-Bob has rated one of Carol's posts at +0.8.
-
-```
-derived_affinity(Bob, Carol)   = +0.8
-composite_affinity(Bob, Carol) = +0.8
-```
-
----
-
-**Step 4: Alice's effective affinity with Carol.**
-
-Alice has no ratings relating to Carol, so everything she knows about Carol comes through Bob. Bob's contribution:
-
-```
-contribution(Bob → Carol) = import_weight(Bob) × composite_affinity(Bob, Carol)
-                          = 0.125 × 0.8
-                          = +0.10
-
-effective_affinity(Alice, Carol) = +0.10
-```
-
----
-
-**Step 5: Carol's import weight (hop 2).**
-
-Carol is reached through Bob, so her import weight is the signal that arrived at her, attenuated by one more decay step:
-
-```
-import_weight(Carol) = decay × contribution(Bob → Carol)
-                     = 0.5 × 0.10
-                     = +0.05
-```
-
-This is the same as the unrolled chain `composite_affinity(Alice, Bob) × composite_affinity(Bob, Carol) × decay² = 0.25 × 0.8 × 0.25`.
-
----
-
-**Step 6: Alice's effective affinity with Dave.**
-
-Carol has rated one of Dave's posts at −1.0, so `composite_affinity(Carol, Dave) = −1.0`.
-
-```
-contribution(Carol → Dave) = import_weight(Carol) × composite_affinity(Carol, Dave)
-                           = 0.05 × (−1.0)
-                           = −0.05
-
-effective_affinity(Alice, Dave) = −0.05
-```
-
-Dave has published no ratings, so he is not a peer and the traversal ends here.
-
----
-
-**Step 7: Effective scores of Z and W.**
-
-By §5, a post's effective score is the mean of the terms that apply to it. Neither Z nor W has tags, and Alice has not rated either herself, so the only term for each is the effective affinity with its author:
-
-```
-effective_score(Alice, Z) = effective_affinity(Alice, Carol) = +0.10
-effective_score(Alice, W) = effective_affinity(Alice, Dave)  = −0.05
-```
-
-Z scores +0.10 for Alice — positive but modest, reflecting an endorsement filtered through one moderate-affinity link. W scores −0.05 — slightly below the default threshold of 0, so it would not appear in her default feed. She can still retrieve it directly if she chooses.
-
-Note that Bob's rating of Z does not reach Alice as a rating of *Z*; it reaches her as Bob's *affinity with Carol*, which then colors every post Carol writes. Here Z happens to be the only post Bob rated, so the two coincide.
-
----
-
-**The enemy-of-my-enemy demonstrated.**
-
-Suppose instead Alice had rated Bob's posts negatively: mean −0.25.
-
-```
-composite_affinity(Alice, Bob) = −0.25
-import_weight(Bob)             = −0.25 × 0.5 = −0.125
-```
-
-Bob's affinity with Carol is still +0.8, so Bob's contribution to Carol is now negative:
-
-```
-effective_affinity(Alice, Carol) = −0.125 × 0.8 = −0.10
-effective_score(Alice, Z)        = −0.10
-```
-
-Bob's endorsement of Carol is now a negative signal for Alice. Further down the chain:
-
-```
-import_weight(Carol)             = 0.5 × (−0.10)    = −0.05
-effective_affinity(Alice, Dave)  = −0.05 × (−1.0)   = +0.05
-effective_score(Alice, W)        = +0.05
-```
-
-Carol's condemnation of Dave, filtered through Alice's distrust of Bob who trusts Carol, becomes a mild positive signal. No special logic is required — the signed arithmetic handles it automatically.
+**8.3 Default aggregation parameters.** The α and δ controls are configurable. Recommended defaults and user-interface presentation can be refined through client experimentation and community feedback.
