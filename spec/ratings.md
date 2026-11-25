@@ -148,6 +148,8 @@ There are therefore three relevant states:
 2. **Numeric value:** the user has an active rating, including an explicit neutral value of zero.
 3. **Null value:** the user has explicitly retracted the rating.
 
+The first and third states have the same meaning for inference and aggregation: a retracted rating makes it as though the user has not issued a rating; but it explicitly tells other clients that any earlier rating has been withdrawn, with a timestamped record that prevents older ratings from being resurrected when records are exchanged.
+
 Historical superseded records may be retained for auditing or recovery, but only the newest known record determines the current rating. The normative default is to share and request only the newest known record for each tuple.
 
 ### 2.4 Visibility and Privacy
