@@ -467,13 +467,13 @@ Its strength is the product of the strengths of the input triangles.
 
 A derived triangle is a graph structure, not a new rating record. It is not signed by the user occupying its rater role, does not update that user's logical rating tuple, and must never be represented to peers as though that user had explicitly issued it.
 
-Every derived triangle retains the provenance of the input triangles from which it was inferred. If an input triangle is itself derived, its provenance is carried forward recursively.
+Every derived triangle retains its derivation: the two input triangles and the inference step that produced it. If an input triangle is itself derived, its derivation is retained recursively.
 
 Derived triangles may be used as inputs to further applications of the four inference rules. This allows relationships to propagate through multiple users and categories without introducing any additional inference rules.
 
 ### 4.2 Separate Paths and Separate Evidence
 
-Different valid paths remain distinct even when they produce triangles with the same user, target, and category.
+Different valid derivations remain distinct even when they produce triangles with the same user, target, and category.
 
 An explicit rating is never merged with inferred relationships into a single edge or averaged together with them to produce one effective direct relationship.
 
@@ -486,57 +486,106 @@ These are separate paths of evidence. The explicit rating remains a direct one-t
 
 The inferred affinity does not reduce or dilute the explicit rating. Both may contribute to Alice's evaluation of something Bob rates, at their respective graph distances.
 
-Likewise, multiple inferred relationships are not averaged into one edge before aggregation. Each distinct path retains its own strength, provenance, and distance.
+Likewise, multiple inferred relationships are not averaged into one edge before aggregation. Each distinct derivation retains its own strength, provenance, and distance.
 
-### 4.3 Simple Paths and Provenance
+### 4.3 Derivation Graphs and Provenance
 
-A **path** is a finite sequence of valid rating-triangle joins, following the four inference rules in §3.2. A path may use original rating triangles and derived triangles, but every inference must be justified by the roles and directions of its input triangles.
+A **derivation** is a finite, acyclic structure of rating triangles and inference steps that establishes a derived rating triangle from original current rating records.
 
-A path is **simple** when:
+Its structure can be represented as a directed acyclic graph (DAG):
 
-- No underlying current rating record is used more than once within that path.
-- The same underlying rating evidence is not counted twice merely because it appears in more than one derived triangle.
-- A path does not revisit the same directed derived-rating state and thereby close a cycle.
+- Original current, non-null rating records are the leaves.
+- Each derived triangle is produced by an inference step whose two inputs are its immediate parent triangles.
+- A derived triangle may be used as an input to more than one subsequent inference.
+- Different branches may share an original rating record or an earlier derived triangle.
 
-When two derived triangles are joined, their underlying rating-record provenance must be disjoint. Their combined result carries the union of their provenance.
+A derivation must be acyclic. A derived triangle must not depend, directly or indirectly, on itself. In particular, an inference cannot use a derived result whose own derivation depends on the result being produced.
 
-The same user, post, or category may appear repeatedly as a shared context where required by the inference rules. Reusing a category as the common destination of several ratings, for example, does not by itself constitute a cycle. What must not recur is the same underlying rating evidence or the same directed derived relationship state within a single path.
+The same original rating record may be used in multiple branches of one derivation, and may also participate in any number of separate derivations. Reusing a record in another branch does not invalidate either inference and does not require the branches to have disjoint provenance.
 
-Two paths are distinct when they represent different valid sequences of rating-triangle connections and underlying rating evidence. Swapping the operands of a symmetric inference rule does not create an additional path.
+When branches converge, the immediate input triangles retain their own derived strengths. The new inference multiplies those strengths according to §3.4, even when their underlying derivations share one or more original records. Shared provenance is not deduplicated from the strength calculation.
 
-A single current rating record may participate in many different paths, but it may appear only once within any one path.
+For example, suppose:
 
-### 4.4 All Simple Paths Contribute
+```text
+Rating1: R(Alice, Post1, philosophy; -0.2)
+Rating2: R(Bob, Post1, philosophy; +0.3)
+```
 
-All distinct simple paths contribute, regardless of their length.
+Rule 1 produces:
 
-A longer path is not discarded merely because a shorter path also reaches the same user or produces a relationship between the same entities.
+```text
+Inference1: R(Alice, Bob, philosophy; -0.06)
+```
+
+Suppose Alice also has:
+
+```text
+Rating3: R(Alice, Post1, important; +0.5)
+```
+
+Rule 2 produces:
+
+```text
+Inference2: R(Alice, philosophy, important; -0.1)
+```
+
+And Bob has:
+
+```text
+Rating4: R(Bob, Post2, philosophy; +0.7)
+```
+
+Rule 3 combines Inference1 and Rating4:
+
+```text
+Inference3: R(Alice, Post2, philosophy; -0.042)
+```
+
+Rule 4 then combines Inference3 and Inference2:
+
+```text
+Inference4: R(Alice, Post2, important; +0.0042)
+```
+
+Rating1 is used in both branches: it contributes to Inference1 and to Inference2. This is valid. Inference4's strength is calculated by multiplying the strengths of its immediate inputs, `-0.042 × -0.1 = +0.0042`. The shared original record is not removed or deduplicated from either branch.
+
+This preserves the meaning of the intermediate relationships. Alice's negative relationship to Bob concerning `philosophy`, and her negative relationship between `philosophy` and `important`, are both meaningful derived relationships. Their composition produces a positive result.
+
+Two derivations are distinct when they represent different valid structures of inference, even if they share some or all of their original rating records. Swapping the operands of a symmetric inference rule does not create an additional derivation.
+
+### 4.4 All Distinct Acyclic Derivations Contribute
+
+All distinct valid acyclic derivations contribute, regardless of their depth.
+
+A longer derivation is not discarded merely because a shorter derivation also reaches the same user or produces a relationship between the same entities.
 
 This is essential to preserving the distinction between direct trust and inferred affinity. An explicit relationship can provide one path while numerous independent inferred relationships provide additional paths at greater distances.
 
 For example:
 
-- Alice's direct rating of Bob provides a one-triangle relationship path.
-- Two ratings of the same target and category by Alice and Bob provide a two-triangle inferred relationship path.
-- A further rating by Bob can extend either relationship path to another target.
+- Alice's direct rating of Bob provides a one-triangle relationship.
+- Two ratings of the same target and category by Alice and Bob provide a derived relationship through Rule 1.
+- A further rating by Bob can extend either relationship to another target.
+- Different valid combinations of these relationships may produce separate derivations of the same resulting rating triangle.
 
-The paths remain independent contributions. Their distances determine how they are combined during aggregation in Section 5.
+Each distinct derivation remains a separate contribution. Its strength and distance determine how it is combined during aggregation in Section 5.
 
 There is no shortest-path-only rule, and no single effective relationship is calculated for each ordered pair before aggregation.
 
 ### 4.5 Zero-Strength and Retracted Triangles
 
-A zero-strength numeric rating is still a valid rating triangle. It may participate in inference and may form part of a structurally valid path.
+A zero-strength numeric rating is still a valid rating triangle. It may participate in inference and may form part of a structurally valid derivation.
 
-A path whose supporting relationships multiply to zero has zero influence. It contributes neither signed evidence nor influence mass in aggregation, but it must not be treated as though the underlying rating records were absent.
+A derivation whose supporting relationships multiply to zero has zero influence. It contributes neither signed evidence nor influence mass in aggregation, but it must not be treated as though the underlying rating records were absent.
 
-A null-valued record is different. It is a retraction, not a numeric rating. It does not form a triangle, cannot be used as an input to inference, and cannot support a path.
+A null-valued record is different. It is a retraction, not a numeric rating. It does not form a triangle, cannot be used as an input to inference, and cannot support a derivation.
 
 If a newer null record supersedes an earlier numeric record, the earlier triangle is no longer part of the current graph.
 
 ### 4.6 No Transmission of Derived Graph Data
 
-Peers exchange signed rating records, not derived triangles, inferred relationships, paths, or aggregates.
+Peers exchange signed rating records, not derived triangles, inferred relationships, derivations, or aggregates.
 
 Each client derives its own graph from the original records it has received. This avoids treating another client's inferences as authoritative and allows each client to account for its own private ratings and configured preferences.
 
@@ -550,70 +599,90 @@ A derived result that depends on any private rating remains private to the clien
 
 An aggregate rating estimates how an evaluator regards a target in a particular category, using their own ratings and ratings reachable through the graph.
 
-The calculation is category-specific. A rating of a target in another category is not direct evidence for the category currently being evaluated, although it may contribute to a valid path that carries influence or a rating into the current category.
+The calculation is category-specific. A rating of a target in another category is not direct evidence for the category currently being evaluated, although it may contribute to a valid derivation that carries influence or a rating into the current category.
 
 No computed aggregate is transmitted as a protocol rating. Each client derives aggregates locally from the rating records and graph it currently knows.
 
-### 5.2 Contribution Paths
+### 5.2 Contribution Derivations
 
-For an evaluator `A`, target `T`, and category `C`, an aggregate is built from all distinct simple paths that validly derive a rating of `T` in `C` for `A`.
+For an evaluator `A`, target `T`, and category `C`, an aggregate is built from all distinct valid acyclic derivations that establish a rating of `T` in `C` for `A`.
 
-Each contribution path has:
+Each contribution is a derivation graph whose resulting triangle is:
 
-- One **terminal rating record**, which is a current, non-null rating of target `T` by some user in some category.
-- A **supporting prefix**, consisting of zero or more other current rating records that, through valid applications of the inference rules, connect the evaluator to the terminal rater and/or carry the terminal rating into the category being evaluated.
+`R(A, T, C; v)`
 
-The terminal rating record is not also used in the supporting prefix. No underlying rating record may be reused within the path.
+where `v` is the strength calculated by applying the inference rules recursively from the original rating records at the leaves.
 
-The terminal rater is the source of the terminal rating. Only users can issue rating records, so terminal sources are users. Posts and categories can still participate as targets and as intermediate entities in paths.
+A derivation may consist of:
 
-The supporting prefix may contain explicit ratings, inferred user relationships, inferred category relationships, and further transitive inferences. It must form a valid path under the four inference rules in Section 3.
+- A single original rating record, with no inference steps.
+- One inference step combining two original rating records.
+- Multiple inference steps, including branches that converge on a derived triangle.
+- Multiple branches that share one or more original rating records or intermediate derived triangles.
 
-The path may have an empty supporting prefix. This is the evaluator's own current rating of the target in the category being evaluated.
+An original rating directly issued by the evaluator for the target in the category being evaluated is a contribution with no inference steps.
 
-A path with a nonempty supporting prefix represents indirect evidence. For example:
+The source rating records are the leaves of the derivation. They must all be current, non-null numeric records. A retracted or superseded record cannot support a derivation.
 
-- Alice's direct rating of Bob in `important`, followed by Bob's rating of a post in `important`, is a one-record supporting prefix and has distance 1.
-- An inferred affinity between Alice and Bob through a shared target and category requires two supporting rating records. Bob's rating of another post can therefore reach Alice through a path at distance 2.
-- Alice's rating of a post in `philosophy`, together with her rating of `philosophy` as a target in `important`, can carry the post rating into `important` through a one-record supporting prefix and has distance 1.
+A derivation must follow the four inference rules in Section 3 at every step. The fact that a set of triangles can be arranged into a structurally plausible result is not sufficient if the required role alignment or inference rule is absent.
 
-The number of supporting rating records determines the path's distance. The terminal rating record itself is not counted toward that distance.
+The distance of a contribution is determined by the depth of its derivation, as defined in §5.3.
 
-### 5.3 Path Strength and Contributions
+### 5.3 Derivation Strength, Distance, and Contributions
 
-For each contribution path `p`:
+For each contribution derivation `p`:
 
-- `r_p` is the value of its terminal rating record.
-- `a_p` is the product of the values of all rating records in its supporting prefix.
-- `d_p` is the number of distinct underlying rating records in its supporting prefix.
+- `v_p` is the strength of its resulting derived triangle.
+- `d_p` is the maximum number of inference steps along any branch from the resulting triangle back to an original rating record.
 
-If the supporting prefix is empty:
+The strength is calculated recursively. Every inference step multiplies the strengths of its two immediate input triangles, as specified in §3.4. If an input triangle is itself derived, its already-calculated strength is used as the input.
 
-`a_p = +1`
+The same original rating may therefore affect the resulting strength more than once when it contributes through multiple branches. No provenance deduplication is performed during strength calculation.
+
+Distance is calculated structurally:
+
+- An original rating record has depth zero.
+- Each inference step adds one level of depth above its input triangles.
+- The distance of a derived triangle is the greatest depth among its supporting branches.
+
+Equivalently, distance is the length of the longest chain of inference steps from the resulting triangle back to any original rating record.
+
+For example, consider the derivation in §4.3:
+
+- Inference1 is one inference step from Rating1 and Rating2.
+- Inference2 is one inference step from Rating1 and Rating3.
+- Inference3 is one inference step from Inference1 and Rating4.
+- Inference4 is one inference step from Inference3 and Inference2.
+
+Inference4 has distance 3. Its longest branch passes through Inference3 and Inference1 before reaching Rating1 or Rating2. The other branch, through Inference2, is shorter. The shared use of Rating1 does not reduce the depth of the longer branch.
+
+If the derivation consists of a single original rating with no inference steps:
+
+`v_p = rating value`
 
 and:
 
 `d_p = 0`
 
-The path contributes:
+The contribution's signed evidence is:
 
-`a_p × r_p`
-
-to the signed evidence at distance `d_p`.
+`v_p`
 
 Its influence mass is:
 
-`|a_p|`
+`1`
 
-The path's supporting strength is therefore distinct from its terminal rating:
+For a derived contribution, its signed evidence is likewise its resulting strength:
 
-- A nonzero supporting strength combined with a terminal rating of zero contributes influence mass but no signed evidence.
-- A zero supporting strength contributes neither signed evidence nor influence mass, regardless of the terminal rating.
-- A null terminal rating contributes nothing because null-valued records do not form rating triangles.
+`v_p`
 
-A current terminal rating may be reached through more than one distinct simple path. Each path contributes separately, with its own supporting strength and distance.
+Its influence mass is:
 
-A source's rating is therefore not counted only once after collapsing all paths to that source. The same rating can contribute through a direct relationship, an inferred relationship, or several independent paths at different distances.
+`1`
+
+The strength of a derived triangle already incorporates the strengths of all inference steps that produced it. Its influence mass represents one contribution at that derivation's distance; the magnitude of its strength determines the signed evidence.
+
+A current rating may contribute through more than one distinct derivation. Each derivation contributes separately, with its own resulting strength and distance. A source rating is not counted only once after collapsing all derivations that depend on it.
 
 ### 5.4 Distance Layers and Aggregation Parameters
 
@@ -626,15 +695,15 @@ Both parameters are in [0, 1].
 
 Increasing α corresponds to giving greater weight to averaging within a layer, rather than allowing large numbers of contributions to accumulate.
 
-Decreasing δ corresponds to giving lesser weight to more distant paths, rather than treating ratings at every distance with the same weight as the evaluator's own.
+Decreasing δ corresponds to giving lesser weight to more distant derivations, rather than treating ratings at every distance with the same weight as the evaluator's own.
 
 The default client interface should present a single inverse-binding control (increasing α decreases δ, and vice versa); advanced clients may expose α and δ separately, as well as category-specific settings.
 
 For each distance layer `d`, calculate:
 
-`S_d = Σ (a_p × r_p)` for all paths p at distance d
+`S_d = Σ v_p` for all derivations p at distance d
 
-`W_d = Σ |a_p|` for all paths p at distance d
+`W_d = Σ |v_p|` for all derivations p at distance d
 
 Here, `S_d` is the signed evidence and `W_d` is the total influence mass at that distance.
 
@@ -644,7 +713,7 @@ Define the distance weight:
 
 `w(d, δ) = δ^d` when `d > 0`
 
-Only layers satisfying both `W_d > 0` participate in the final aggregate. Call this set of layers `L`.
+Let `L` be the set of all distance layers satisfying `W_d > 0`.
 
 If `L` is empty, the aggregate is null.
 
@@ -666,23 +735,23 @@ Finally, calculate the aggregate:
 
 where both sums include only layers in `L`.
 
-The shared normalizer is intentional: a large layer can affect the relative influence of all other participating layers. It is not a separate normalization performed independently for each distance layer.
+All layers with positive influence mass participate in calculating the shared normalizer, regardless of their distance weight. A layer with zero distance weight contributes nothing directly to the weighted sum, but may still affect the shared normalization.
+
+The shared normalizer is intentional: a large layer can affect the relative influence of all other layers. It is not a separate normalization performed independently for each distance layer.
 
 Only calculate powers for layers where `W_d > 0`; implementations must not rely on `0^0`.
-
-The shared normalizer is calculated only over layers that actually participate in the final aggregate.
 
 ### 5.5 Parameter Behavior
 
 The endpoints of α have useful interpretations:
 
-- **α = 0:** contributions within each participating layer are summed before the shared normalization. Larger layers can exert greater influence because they contain more total evidence.
-- **α = 1:** each participating layer is effectively averaged by its total influence mass before the shared normalization. The shared normalizer is 1, and each represented distance layer receives equal weight before δ is applied.
+- **α = 0:** contributions within each represented layer are summed before the shared normalization. Larger layers can exert greater influence because they contain more total evidence.
+- **α = 1:** each represented layer is effectively averaged by its total influence mass before the shared normalization. The shared normalizer is 1, and each represented distance layer receives equal weight before δ is applied.
 - **0 < α < 1:** intermediate behavior between summation and averaging.
 
 The endpoints of δ determine distance weighting:
 
-- **δ = 0:** only distance-zero evidence contributes. If no usable distance-zero evidence exists, the aggregate is null even if indirect paths exist.
+- **δ = 0:** only distance-zero layers contribute directly to the weighted sum. More distant layers still participate in the shared normalizer and can therefore diminish the aggregate when α is less than 1. When α = 1, those distant layers have no effect on the aggregate. If no distance-zero layer exists, the aggregate is null because the final distance-weight denominator is zero.
 - **δ = 1:** every represented distance layer receives equal weight.
 - **0 < δ < 1:** more distant layers receive progressively less weight.
 
@@ -695,9 +764,9 @@ The protocol permits α = 0 and δ = 0, including their combination. Implementat
 An aggregate is **null** when no usable contribution exists. This includes cases where:
 
 - No relevant current ratings are known.
-- No valid path connects the evaluator to any relevant rating.
+- No valid derivation connects the evaluator to any relevant rating.
 - All relevant ratings have been retracted.
-- All available paths have zero supporting strength.
+- All available derivations have zero strength.
 
 A numerical aggregate of zero is different: it means usable evidence exists, but the signed contributions balance to neutrality.
 
@@ -717,10 +786,9 @@ Alice has rated `PostY` +0.2 in `important`:
 R(Alice, PostY, important; +0.2)
 ```
 
-This has an empty supporting prefix:
+This has no inference steps:
 
-- `a_p = +1`
-- `r_p = +0.2`
+- `v_p = +0.2`
 - `d_p = 0`
 - Signed contribution: `+0.2`
 - Influence mass: `1`
@@ -734,13 +802,12 @@ R(Alice, Bob, important; +1.0)
 R(Bob, PostY, important; +0.5)
 ```
 
-This gives Alice a path to Bob's rating of `PostY`:
+This gives Alice a derivation of a rating of `PostY`:
 
-- `a_p = +1`
-- `r_p = +0.5`
-- `d_p = 1`
+- Derived strength `v_p = +1.0 × +0.5 = +0.5`
+- Distance `d_p = 1`
 - Signed contribution: `+0.5`
-- Influence mass: `1`
+- Influence mass: `0.5`
 
 **Inferred affinity for Bob**
 
@@ -753,23 +820,22 @@ R(Bob, PostX, important; +0.8)
 
 By Rule 1, these imply a bidirectional affinity of `+0.8` between Alice and Bob in `important`.
 
-That inferred relationship can be used in a further path through Bob's rating of `PostY`:
+That inferred relationship can be used in a further derivation through Bob's rating of `PostY`:
 
 ```text
 R(Bob, PostY, important; +0.5)
 ```
 
-The path has:
+The derivation has:
 
-- Supporting strength `a_p = +1.0 × +0.8 = +0.8`
-- Terminal rating `r_p = +0.5`
+- Derived strength `v_p = +1.0 × +0.8 × +0.5 = +0.4`
 - Distance `d_p = 2`
 - Signed contribution: `+0.4`
-- Influence mass: `0.8`
+- Influence mass: `0.4`
 
-This contribution remains separate from the explicit trust path at distance 1. The inferred affinity does not dilute Alice's explicit +1 rating of Bob.
+This contribution remains separate from the explicit trust derivation at distance 1. The inferred affinity does not dilute Alice's explicit +1 rating of Bob.
 
-If Alice and Bob had rated many shared posts, each distinct simple path through a shared target and category could contribute separately at its own distance. α and δ determine how those contributions combine with one another and with nearer evidence.
+If Alice and Bob had rated many shared posts, each distinct derivation through a shared target and category could contribute separately at its own distance. α and δ determine how those contributions combine with one another and with nearer evidence.
 
 **Category propagation**
 
@@ -782,13 +848,12 @@ R(Alice, philosophy, important; +0.8)
 
 By Rule 4, these imply a rating of `PostY` in `important` with:
 
-- Supporting strength `a_p = +0.8`
-- Terminal rating `r_p = +0.9`
+- Derived strength `v_p = +0.9 × +0.8 = +0.72`
 - Distance `d_p = 1`
 - Signed contribution: `+0.72`
-- Influence mass: `0.8`
+- Influence mass: `0.72`
 
-This is another distinct path, even though it has the same evaluator, target, and destination as the direct rating and the other paths.
+This is another distinct derivation, even though it has the same evaluator, target, and destination as the direct rating and the other derivations.
 
 **Explicit neutrality**
 
@@ -799,43 +864,42 @@ R(Alice, Bob, important; +1.0)
 R(Bob, PostZ, important; 0)
 ```
 
-The path contributes:
+The derivation produces:
 
-- `a_p = +1`
-- `r_p = 0`
-- `d_p = 1`
+- Derived strength `v_p = +1 × 0 = 0`
+- Distance `d_p = 1`
 - Signed contribution: `0`
-- Influence mass: `1`
+- Influence mass: `0`
 
-The explicit zero therefore counts as evidence and moderates the aggregate toward neutrality.
+A zero-strength derivation therefore supplies no influence mass and does not affect the aggregate.
 
-A null-valued current rating of `PostZ` would not contribute at all. It would mean Bob has withdrawn his rating, rather than explicitly expressed neutrality.
+A null-valued current rating of `PostZ` would not produce a derivation at all. It would mean Bob has withdrawn his rating, rather than explicitly expressed neutrality.
 
 ### 5.8 Open-World and Provisional Results
 
-The graph is open-ended. There is no global completeness test, and clients cannot establish that they have discovered every relevant record or path.
+The graph is open-ended. There is no global completeness test, and clients cannot establish that they have discovered every relevant record or derivation.
 
 An aggregate is therefore provisional with respect to the records and graph currently known to the client.
 
 Discovering a new record may:
 
 - Introduce a new terminal rating contribution.
-- Introduce a new direct or inferred path.
-- Extend an existing path through another user or category.
+- Introduce a new direct or inferred derivation.
+- Extend an existing derivation through another user or category.
 - Change the strength of a derived triangle.
-- Introduce additional paths at new distances.
+- Introduce additional derivations at new distances.
 - Change the influence mass and signed evidence in one or more distance layers.
-- Change aggregates for other targets, categories, or users through further valid paths.
+- Change aggregates for other targets, categories, or users through further valid derivations.
 
 These changes may cascade through multiple graph paths, categories, targets, and users.
 
 Clients are responsible for invalidating cached results and recomputing derived values when relevant records or relationships change. The protocol does not prescribe a particular caching or recomputation implementation.
 
-The number of simple paths can grow rapidly as the graph expands. Clients may use resource limits and incremental computation, but a result that omits paths because of such limits is partial with respect to the currently known graph and should be treated accordingly.
+The number of possible derivations can grow rapidly as the graph expands. Clients may use resource limits and incremental computation, but a result that omits derivations because of such limits is partial with respect to the currently known graph and should be treated accordingly.
 
-Different clients may temporarily calculate different aggregates because they know different portions of the graph or have explored different portions of its paths. Given the same relevant records, the same set of paths, and the same settings, conforming clients should calculate the same result, allowing for ordinary floating-point tolerances.
+Different clients may temporarily calculate different aggregates because they know different portions of the graph or have explored different portions of its derivations. Given the same relevant records, the same set of derivations, and the same settings, conforming clients should calculate the same result, allowing for ordinary floating-point tolerances.
 
-The mathematical result should not depend on record-discovery order. Implementations should make path enumeration, path deduplication, and aggregation order-independent apart from negligible floating-point differences.
+The mathematical result should not depend on record-discovery order. Implementations should make derivation enumeration, derivation deduplication, and aggregation order-independent apart from negligible floating-point differences.
 
 ### 5.9 Filtering and Thresholds
 
