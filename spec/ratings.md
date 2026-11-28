@@ -200,7 +200,7 @@ Visibility controls distribution, not precedence. A public record does not take 
 
 ### 2.5 Timestamp Plausibility
 
-Timestamps are supplied by the user and are not globally synchronized. Their ordering is meaningful only within the same user's records for the same `(target, destination)` tuple.
+Timestamps are supplied by the user and are not globally synchronized. Ordinarily, their ordering is meaningful only among the same user's records for the same `(target, destination)` tuple. Section 2.6 defines a post-aggregation scope in which different version targets are treated as the same stable post for the purpose of selecting the rater's current rating of that post. This aggregation-specific comparison does not merge or supersede the underlying version-specific records for other purposes.
 
 Clients may apply plausibility checks to future timestamps. An implausibly future-dated record may be temporarily withheld from current calculations and reconsidered later. Such records should not be permanently discarded solely because their timestamps appear to be in the future.
 
@@ -216,8 +216,9 @@ The procedure is:
 2. Collect rating records whose targets are versions in the canonical history, including memory-holed versions. Ratings of a memory-holed version still count: an author cannot erase the response to their own words by skipping a version.
 3. Collect ratings of third-party introductions and unsigned copies that name the claimed author, but only where content identity is confirmed (`metadata.md` §4.3) against an author-signed version. Introductions are confirmed against author-signed versions only, never against one another. A post with no author-signed version at all (a bridged post whose author has not joined neusnet) has no canonical history; its current version, the *anchor*, stands in for it. The anchor's own ratings are collected, and introductions are confirmed against it.
 4. Exclude ratings whose targets are false-claimant versions. A false claimant's version remains a post in its own right, and ratings of it may contribute to relationships involving that post and its named author. It is simply not included in the canonical post's aggregate.
-5. **Deduplicate by rater and destination:** for each rater and destination, retain only their most recent record across all collected versions. This prevents repeated ratings of different versions from counting as separate evidence. Records are taken whole, consistent with §2.3. A null-valued record is treated like any other newest record and withdraws that user's rating; an earlier rating of another version is not resurrected. If records for the same rater and destination have equal timestamps, use the same tie-handling rule as §2.3; clients may disagree until a later record resolves the ambiguity.
-6. Apply the graph derivation and aggregation rules in Sections 3–5 to the resulting current ratings.
+5. For this post-level aggregation, treat all eligible version targets and confirmed introduction/copy targets collected in steps 2–3 as references to the same stable post identity. This equivalence is used only for this aggregation; it does not change the targets recorded in the original rating records or merge the underlying records.
+6. **Deduplicate by rater, stable post identity, and destination:** group the collected records by `(rater, stable post identity, destination)` and retain only the most recent record in each group, using the timestamp comparison and tie-handling rules in §2.3. Because the records in a group are all ratings by the same rater of the same logical post in the same destination, their timestamps are compared even when their original target identifiers refer to different versions or confirmed introductions/copies. A null-valued record is treated like any other newest record and withdraws that rater's rating of the post in that destination; an earlier numeric rating of another version or confirmed representation is not resurrected. If records in a group have equal timestamps, use the same tie-handling rule as §2.3; clients may disagree until a later record resolves the ambiguity.
+7. Apply the graph derivation and aggregation rules in Sections 3–5 to the resulting current ratings. This cross-version deduplication applies to the aggregate for the stable post as a whole; it does not rewrite the original records or prevent clients from showing version-specific rating information.
 
 This procedure assumes every rating record has already been validated and its signature verified (`identity.md` §4.4). Ratings of versions that are not part of the post, and records that are not ratings of posts, are not collected.
 
@@ -313,7 +314,7 @@ R(r, t, c2; b)
 where `c1` and `c2` are different categories, infer:
 
 ```text
-R(r, c1, C2; a × b)
+R(r, c1, c2; a × b)
 R(r, c2, c1; a × b)
 ```
 
@@ -941,7 +942,7 @@ An ordinary canonical category identifier:
 - Has no consecutive hyphens.
 - Is not empty.
 
-Whitespace runs in user input are normalized to a single hyphen. Consecutive hyphens are collapsed, and leading or trailing hyphens are removed.
+Whitespace runs in user input are normalized to a single hyphen. Consecutive hyphens are collapsed, and leading or trailing hyphens are removed. If nonempty user input becomes empty after normalization (for example, because it consists only of whitespace, hyphens, or punctuation that the client removes), it must be rejected rather than interpreted as the root category. The root category is selected only when the user intentionally supplies or selects the empty identifier.
 
 Punctuation, symbols, and emoji are not permitted in canonical category identifiers. Clients may offer user-facing normalization of punctuation where the intended word boundaries are clear, but must not silently assign arbitrary semantic meaning to punctuation.
 
