@@ -29,11 +29,11 @@ The same operation serves two closely related purposes:
 
 These are not separate protocol operations. Only context and presentation differentiate between a client treating a rating action as categorical or as evaluative.
 
-Of particular note, users may globally filter by a selection of categories (see §5.9), and in doing so make a target's effective ratings in those categories the criteria for its inclusion or exclusion in the user's view. This makes the ratings evaluative in practice, expressing the target's worth along the dimensions expressed by those filter categories (such as `informative`, `enjoyable`, `important`, and `original`, the recommended defaults).
-
 A category is itself an entity and may be rated as a target in another category. This allows users to express relationships between categories using the same mechanism used to categorize posts and users. Categories may be associated with multiple other categories, and those associations may be positive, negative, or neutral.
 
-There are no protocol-defined fixed rating dimensions. Every category is user-defined, and any category may be used to rate any eligible target. Clients may offer conventional defaults, but those defaults have no special status in the protocol.
+There are no protocol-defined fixed rating dimensions. Every ordinary category is user-defined, and any category may be used to rate any eligible target. Clients may offer conventional defaults, but those defaults have no special status in the protocol.
+
+One category has a special protocol role: the **root category**, whose identifier is the empty string `""`. Ratings in the root category express general, rather than subject-specific, relevance or evaluation. The root category is still an ordinary category entity for purposes of the rating graph and inference rules; its special role is in how clients interpret it for global visibility.
 
 ### 1.2 Rating Values
 
@@ -52,6 +52,8 @@ A null-valued record is a tombstone: it explicitly withdraws any earlier rating 
 
 Clients may expose a simple multiple-choice interface (positive, negative, neutral, and null) or allow finer-grained values. The protocol accepts any numeric value in the permitted range.
 
+An explicit zero is a genuine evidential contribution. It participates in inference like any other numeric rating. Any valid derivation containing a zero-strength input has strength zero, but that derivation still counts as one contribution during aggregation. This distinguishes an explicitly neutral rating from an absent or retracted rating.
+
 ### 1.3 Conventional Categories
 
 Clients may offer conventional categories as defaults. The suggested defaults are:
@@ -61,29 +63,31 @@ Clients may offer conventional categories as defaults. The suggested defaults ar
 - `important`
 - `original`
 
-These are ordinary categories, not reserved protocol dimensions. Users may use other categories, rate categories themselves, and configure their own filters.
+These are ordinary categories, not reserved protocol dimensions. Users may use other categories, rate categories themselves, and express preferences about categories through ordinary ratings in the root category.
 
-There is no protocol-level distinction between a category used for broad feed filtering and one used for a specific subject or quality. That distinction is a client presentation choice.
+The root category serves as the mechanism for selecting global filter categories. There is one global threshold, applied to aggregate ratings in the root category. A user's preferences for particular categories are represented by ratings of those categories in the root category, rather than by a separate client-side filter configuration.
 
 ### 1.4 The Unified Rating Graph
 
 Every rating connects three entities in three distinct roles:
 
-1. The **user** issuing the rating.
+1. The **user** issuing the rating, called the *rater*.
 2. The **target** being rated.
-3. The **category** in which the target is being rated.
+3. The **category** in which the target is being rated, called the *destination*.
 
-These three roles form a conceptual **rating triangle**. The rating user can also be referred to as the *rater*: they are the user evaluating the target or associating it with something. The category can likewise also be understood as the rating's *destination*: it is the category in which the target is being associated or evaluated.
+These three roles form a conceptual **rating triangle**.
 
-The target may be a user, post, or category. The rater is always a user, and the destination is always a category.
+The *target* may be a user, post, or category. The *rater* is always a user, and the *destination* is always a category, with those terms used as necessary to clarify those roles when a second user or category may be involved as the target.
 
 The role positions remain distinct even when an entity occupies more than one role, as with a user rating themselves. A rating triangle is a conceptual three-role relationship, not a requirement that all three entity identifiers be different.
 
-The graph is built from these rating triangles. Valid combinations of two triangles can imply additional, derived rating triangles. Those derived triangles can in turn participate in further inferences, creating paths through users, posts, and categories.
+The graph is built from these rating triangles. Valid combinations of two triangles can imply additional, derived rating triangles. Those derived triangles can in turn participate in further inferences, creating derivations through users, posts, and categories.
 
 There are no separate graph systems for ratings, categorization, trust, or taxonomy. These are different interpretations and uses of the same rating operation and its resulting graph.
 
 The graph is category-relative: the same entities may be related differently in different categories. Relationships between categories can also allow information to propagate from one category into another.
+
+The root category participates in the same graph and inference rules. For example, a user may rate another user in the root category to express a general relationship, rate a post in the root category to express a general evaluation, or rate a category in the root category to express a general preference about that category.
 
 ---
 
@@ -100,7 +104,7 @@ A rating record is a signed data structure representing one user's current or hi
   "rater":       "<user-identifier>",
   "target":      "<target-identifier>",
   "target_type": "<post | user | category>",
-  "category":    "<normalized-category-name>",
+  "destination": "<normalized-category-name>",
   "value":       <number in [-1, +1] | null>,
   "timestamp":   <unix timestamp, integer seconds>,
   "public":      <boolean>,
@@ -118,17 +122,17 @@ A rating record is a signed data structure representing one user's current or hi
 
 **`target_type`** — identifies the target as a post, user, or category. This disambiguates identifiers that might otherwise have the same string representation.
 
-**`category`** — the normalized category name along which the target is being rated. This is the rating triangle's destination.
+**`destination`** — the normalized category name along which the target is being rated. The empty string `""` identifies the root category.
 
 **`value`** — a number in [-1, +1], or `null` to retract the rating.
 
-**`timestamp`** — the Unix timestamp at which the rating was issued. Used to determine which record is current for a given user, target, and category. It is not used as a recency weight in aggregation.
+**`timestamp`** — the Unix timestamp at which the rating was issued. Used to determine which record is current for a given rater, target, and destination. It is not used as a recency weight in aggregation.
 
 **`public`** — if `false`, the record is private and is not transmitted to peers. It still affects the issuing user's local graph and aggregates. If `true`, the record is eligible for distribution to peers.
 
 **`signature`** — a cryptographic signature over all other fields, using the user's private key. The exact signature scheme is specified in `identity.md`.
 
-The tuple `(user, target, category)` identifies the logical rating being updated. A user may have only one current value for a given tuple, although historical superseded records may be retained.
+The tuple `(rater, target, destination)` identifies the logical rating being updated. A user may have only one current value for a given tuple, although historical superseded records may be retained.
 
 ### 2.2 Record Discovery and Exchange
 
@@ -144,7 +148,7 @@ Private records must never be included in peer exchanges, including cached colle
 
 ### 2.3 Updating and Superseding Ratings
 
-A newer record for the same `(user, target, category)` tuple supersedes the older record.
+A newer record for the same `(rater, target, destination)` tuple supersedes the older record.
 
 The comparison is based on timestamps:
 
@@ -160,9 +164,9 @@ A later numeric record reinstates a rating after retraction.
 
 There are therefore three relevant states:
 
-1. **No record:** the user has not issued a rating for this target and category.
-2. **Numeric value:** the user has an active rating, including an explicit neutral value of zero.
-3. **Null value:** the user has explicitly retracted the rating.
+1. **No record:** the rater has not issued a rating for this target and destination.
+2. **Numeric value:** the rater has an active rating, including an explicit neutral value of zero.
+3. **Null value:** the rater has explicitly retracted the rating.
 
 The first and third states have the same meaning for inference and aggregation: a retracted rating makes it as though the user has not issued a rating; but it explicitly tells other clients that any earlier rating has been withdrawn, with a timestamped record that prevents older ratings from being resurrected when records are exchanged.
 
@@ -176,7 +180,7 @@ Visibility determines whether a record may be distributed; it does not change th
 
 A private rating affects only the issuing user's local graph and calculations. It is not shared with peers. This applies equally to private numeric ratings and private retractions.
 
-A user's private records may affect inferred relationships, paths, and aggregates in that user's local graph. Those derived results must also remain private: clients must not transmit inferred relationships, derived rating triangles, path results, or aggregates that depend on private records.
+A user's private records may affect inferred relationships, derivations, and aggregates in that user's local graph. Those derived results must also remain private: clients must not transmit inferred relationships, derived rating triangles, derivation results, or aggregates that depend on private records.
 
 Peers exchange rating records, not computed aggregates or inferred relationships. Each peer computes its own graph and derived results from the records it has received.
 
@@ -196,7 +200,7 @@ Visibility controls distribution, not precedence. A public record does not take 
 
 ### 2.5 Timestamp Plausibility
 
-Timestamps are supplied by the user and are not globally synchronized. Their ordering is meaningful only within the same user's records for the same `(target, category)` tuple.
+Timestamps are supplied by the user and are not globally synchronized. Their ordering is meaningful only within the same user's records for the same `(target, destination)` tuple.
 
 Clients may apply plausibility checks to future timestamps. An implausibly future-dated record may be temporarily withheld from current calculations and reconsidered later. Such records should not be permanently discarded solely because their timestamps appear to be in the future.
 
@@ -212,8 +216,8 @@ The procedure is:
 2. Collect rating records whose targets are versions in the canonical history, including memory-holed versions. Ratings of a memory-holed version still count: an author cannot erase the response to their own words by skipping a version.
 3. Collect ratings of third-party introductions and unsigned copies that name the claimed author, but only where content identity is confirmed (`metadata.md` §4.3) against an author-signed version. Introductions are confirmed against author-signed versions only, never against one another. A post with no author-signed version at all (a bridged post whose author has not joined neusnet) has no canonical history; its current version, the *anchor*, stands in for it. The anchor's own ratings are collected, and introductions are confirmed against it.
 4. Exclude ratings whose targets are false-claimant versions. A false claimant's version remains a post in its own right, and ratings of it may contribute to relationships involving that post and its named author. It is simply not included in the canonical post's aggregate.
-5. **Deduplicate by user and category:** for each user and category, retain only their most recent record across all collected versions. This prevents repeated ratings of different versions from counting as separate evidence. Records are taken whole, consistent with §2.3. A null-valued record is treated like any other newest record and withdraws that user's rating; an earlier rating of another version is not resurrected. If records for the same user and category have equal timestamps, use the same tie-handling rule as §2.3; clients may disagree until a later record resolves the ambiguity.
-6. Apply the graph-path and aggregation rules in Sections 3–5 to the resulting current ratings.
+5. **Deduplicate by rater and destination:** for each rater and destination, retain only their most recent record across all collected versions. This prevents repeated ratings of different versions from counting as separate evidence. Records are taken whole, consistent with §2.3. A null-valued record is treated like any other newest record and withdraws that user's rating; an earlier rating of another version is not resurrected. If records for the same rater and destination have equal timestamps, use the same tie-handling rule as §2.3; clients may disagree until a later record resolves the ambiguity.
+6. Apply the graph derivation and aggregation rules in Sections 3–5 to the resulting current ratings.
 
 This procedure assumes every rating record has already been validated and its signature verified (`identity.md` §4.4). Ratings of versions that are not part of the post, and records that are not ratings of posts, are not collected.
 
@@ -230,30 +234,36 @@ The default feed view shows the current version with the aggregate score. Client
 
 For clarity, this specification uses the notation:
 
-`R(u, t, c; v)`
+`R(r, t, d; v)`
 
 to represent a rating triangle in which:
 
-- `u` is the user/rater.
+- `r` is the rater.
 - `t` is the target.
-- `c` is the category/destination.
+- `d` is the destination.
 - `v` is the rating value or derived strength.
 
 For example:
 
 `R(Alice, Bob, philosophy; +0.8)`
 
-means Alice rates Bob +0.8 in `philosophy`.
+means Alice rates Bob +0.8 in the destination `philosophy`.
 
 Likewise:
 
 `R(Alice, philosophy, important; +0.7)`
 
-means Alice rates the category `philosophy` +0.7 in the category `important`.
+means Alice rates the category `philosophy` +0.7 in `important`.
 
-A valid rating triangle always has one user/rater role, one target role, and one category/destination role. The target may itself be a user, post, or category.
+A valid rating triangle always has one rater role, one target role, and one destination role. The rater is always a user, the destination is always a category, and the target may be a user, post, or category.
 
 The role of an entity in a triangle matters. Two triangles sharing the same entity identifiers do not necessarily form a valid inference: the roles those entities occupy must also match one of the inference rules below.
+
+The root category is represented by the empty string in the destination position. For example:
+
+`R(Alice, philosophy, ""; +0.8)`
+
+means Alice rates the category `philosophy` +0.8 in the root category.
 
 ### 3.2 The Four Valid Inference Rules
 
@@ -261,22 +271,22 @@ Only the following four rules produce inferred rating triangles. Each rule combi
 
 The strength of each inferred triangle is the product of the strengths of the two input triangles.
 
-#### Rule 1: User Affinity Through a Shared Target and Category
+#### Rule 1: User Affinity Through a Shared Target and Destination
 
 When two different users rate the same target in the same category, their ratings imply an affinity between those users in that category.
 
 Given:
 
 ```text
-R(u1, t, c; a)
-R(u2, t, c; b)
+R(u1, t, d; a)
+R(u2, t, d; b)
 ```
 
 where `u1` and `u2` are different users, infer:
 
 ```text
-R(u1, u2, c; a × b)
-R(u2, u1, c; a × b)
+R(u1, u2, d; a × b)
+R(u2, u1, d; a × b)
 ```
 
 The inferred relationship is bidirectional because the two ratings establish agreement or disagreement but do not establish which user should influence the other more.
@@ -296,15 +306,15 @@ When the same user rates the same target in two different categories, their rati
 Given:
 
 ```text
-R(u, t, c1; a)
-R(u, t, c2; b)
+R(r, t, c1; a)
+R(r, t, c2; b)
 ```
 
 where `c1` and `c2` are different categories, infer:
 
 ```text
-R(u, c1, c2; a × b)
-R(u, c2, c1; a × b)
+R(r, c1, C2; a × b)
+R(r, c2, c1; a × b)
 ```
 
 The inferred relationship is bidirectional. The two ratings establish an association between the categories but do not establish a direction of implication.
@@ -317,6 +327,8 @@ For example, if a user rates a post positively in `philosophy` and positively in
 
 The inferred triangles retain the shared user as their rater. The inference does not remove that user and turn the result into an unqualified, user-independent category relationship.
 
+The root category is not exempt from this rule. If a user rates the same target in an ordinary category and in the root category, those ratings can imply an affinity between the ordinary category and the root category.
+
 #### Rule 3: Transitivity Through a User
 
 When one user rates another user in a category, and that second user rates a target in the same category, the first user's rating can propagate through the second user.
@@ -324,14 +336,14 @@ When one user rates another user in a category, and that second user rates a tar
 Given:
 
 ```text
-R(u1, u2, c; a)
-R(u2, t, c; b)
+R(u1, u2, d; a)
+R(u2, t, d; b)
 ```
 
 infer:
 
 ```text
-R(u1, t, c; a × b)
+R(u1, t, d; a × b)
 ```
 
 This inference is directed. It transfers the second user's rating to the first user, weighted by the first user's relationship to the second user.
@@ -340,7 +352,7 @@ For example, if Alice rates Bob positively in `philosophy`, and Bob rates a post
 
 The reverse inference does not follow automatically.
 
-The user relationship may be explicit or inferred through Rule 1. In either case, its category/destination role must align with the category in which rating is being propagated.
+The user relationship may be explicit or inferred through Rule 1. In either case, its destination role must align with the category in which the rating is being propagated.
 
 #### Rule 4: Transitivity Through a Category
 
@@ -349,14 +361,14 @@ When a user rates a target in one category and also rates that category as a tar
 Given:
 
 ```text
-R(u, t, c1; a)
-R(u, c1, c2; b)
+R(r, t, c1; a)
+R(r, c1, c2; b)
 ```
 
 infer:
 
 ```text
-R(u, t, c2; a × b)
+R(r, t, c2; a × b)
 ```
 
 This inference is directed. A relationship from `c1` to `c2` permits propagation from `c1` into `c2`; it does not automatically permit propagation in the reverse direction.
@@ -366,6 +378,8 @@ For example, if Alice rates a post positively in `philosophy` and rates `philoso
 The reverse inference does not follow automatically.
 
 The category relationship may be explicit or inferred through Rule 2. In either case, its user/rater role must align with the user whose rating is being propagated.
+
+The root category participates in this rule like any other category. For example, a positive rating of `philosophy` in the root category can carry positive ratings in `philosophy` into the root category. This is how a general preference for a category can influence the global visibility of targets associated with it.
 
 ### 3.3 No Other Pairwise Inferences
 
@@ -419,7 +433,7 @@ These restrictions prevent unsupported substitutions of one role for another. Th
 
 ### 3.4 Strength of Inferences
 
-For every inference in §3.2, the inferred strength is the product of the strengths of its two input triangles.
+For every inference in §3.2, the inferred strength is the product of the strengths of the two input triangles.
 
 For input strengths `a` and `b`:
 
@@ -439,7 +453,7 @@ Examples:
 
 A negative relationship reverses the sign of the subsequent contribution. Two negative relationships produce a positive contribution.
 
-A zero-strength inferred triangle remains structurally identifiable as a possible relationship, but it supplies no influence mass in aggregation. It must not be confused with the absence of a path.
+A zero-strength inferred triangle remains structurally valid and can participate in further inferences. Any derivation depending on it has strength zero. Such a derivation still counts as a contribution during aggregation, as specified in Section 5.
 
 ### 3.5 No Special Authorship Relationship
 
@@ -447,11 +461,11 @@ Authorship is provenance, not a special rating or graph relationship. The protoc
 
 An author may publish a completely unrated post. If the author chooses to rate their own post, that is an ordinary rating record and participates in inference and aggregation exactly like any other rating.
 
-Clients may encourage authors to categorize their posts, particularly in the conventional categories the author has selected for their own feed filters. Such encouragement is client behavior, not a protocol requirement, but is highly recommended to initiate some connection of a new post to the existing trust graph.
+Clients may encourage authors to categorize their posts, particularly in categories that the author has positively rated in the root category. Such encouragement is client behavior, not a protocol requirement, but is highly recommended to initiate some connection of a new post to the existing trust graph.
 
 ---
 
-## 4. Derived Triangles and Paths
+## 4. Derived Triangles and Derivations
 
 ### 4.1 Derived Rating Triangles
 
@@ -463,127 +477,99 @@ A derived triangle has the same three roles as an ordinary rating:
 - A target.
 - A category/destination.
 
-Its strength is the product of the strengths of the input triangles.
+Its strength is the product of the strengths of the two input triangles.
 
 A derived triangle is a graph structure, not a new rating record. It is not signed by the user occupying its rater role, does not update that user's logical rating tuple, and must never be represented to peers as though that user had explicitly issued it.
 
-Every derived triangle retains its derivation: the two input triangles and the inference step that produced it. If an input triangle is itself derived, its derivation is retained recursively.
+Every derived triangle retains the provenance of the input triangles from which it was inferred. If an input triangle is itself derived, its derivation is carried forward recursively.
 
 Derived triangles may be used as inputs to further applications of the four inference rules. This allows relationships to propagate through multiple users and categories without introducing any additional inference rules.
 
-### 4.2 Separate Paths and Separate Evidence
+### 4.2 Separate Derivations and Separate Evidence
 
-Different valid derivations remain distinct even when they produce triangles with the same user, target, and category.
+Different valid derivations remain distinct even when they produce triangles with the same rater, target, and destination.
 
 An explicit rating is never merged with inferred relationships into a single edge or averaged together with them to produce one effective direct relationship.
 
 For example, Alice might:
 
 - Explicitly rate Bob `+1` in `important`.
-- Have a long history of agreement and disagreement with Bob, implying only `+0.1` affinity through shared ratings in `important`.
+- Have a history of agreement and disagreement with Bob, implying an affinity through shared ratings in `important`.
 
-These are separate paths of evidence. The explicit rating remains a direct one-triangle relationship. The agreement history remains one or more longer inferred paths.
+These are separate sources of evidence. The explicit rating remains a direct rating triangle. The agreement history remains one or more derived triangles.
 
-The inferred affinity does not reduce or dilute the explicit rating. Both may contribute to Alice's evaluation of something Bob rates, at their respective graph distances.
+The inferred affinity does not reduce or dilute Alice's explicit rating of Bob. Both may contribute to Alice's evaluation of something Bob rates, through their respective derivations.
 
-Likewise, multiple inferred relationships are not averaged into one edge before aggregation. Each distinct derivation retains its own strength, provenance, and distance.
+Likewise, multiple inferred relationships are not averaged into one edge before aggregation. Each distinct derivation retains its own strength and distance.
 
 ### 4.3 Derivation Graphs and Provenance
 
-A **derivation** is a finite, acyclic structure of rating triangles and inference steps that establishes a derived rating triangle from original current rating records.
+A **derivation** is a finite directed acyclic graph (DAG) showing how a rating triangle is obtained from original rating records.
 
-Its structure can be represented as a directed acyclic graph (DAG):
+- Each **leaf** is an original, current, non-null rating record.
+- Each **inference node** represents one application of one of the four rules in §3.2.
+- Each inference node has two input triangles, which may themselves be original records or derived triangles.
+- The root of the derivation is the resulting rating triangle.
 
-- Original current, non-null rating records are the leaves.
-- Each derived triangle is produced by an inference step whose two inputs are its immediate parent triangles.
-- A derived triangle may be used as an input to more than one subsequent inference.
-- Different branches may share an original rating record or an earlier derived triangle.
+A derivation must be acyclic: no inference may depend, directly or indirectly, on the result it is being used to derive.
 
-A derivation must be acyclic. A derived triangle must not depend, directly or indirectly, on itself. In particular, an inference cannot use a derived result whose own derivation depends on the result being produced.
+The same original rating record may support multiple branches of a derivation. Shared evidence is not deduplicated merely because it appears in more than one branch. If a record's strength contributes to two separate input branches that are subsequently combined, its strength is multiplied into the resulting strength through both branches.
 
-The same original rating record may be used in multiple branches of one derivation, and may also participate in any number of separate derivations. Reusing a record in another branch does not invalidate either inference and does not require the branches to have disjoint provenance.
+For example, if one original rating is used in two distinct inference branches, and those branches are later combined, the shared rating's strength may occur twice in the product. This is intentional: the record has played two distinct inferential roles in the derivation.
 
-When branches converge, the immediate input triangles retain their own derived strengths. The new inference multiplies those strengths according to §3.4, even when their underlying derivations share one or more original records. Shared provenance is not deduplicated from the strength calculation.
+A derivation is distinct when its underlying evidence and sequence of inference applications produce a distinct valid derivation graph. Swapping the operands of a symmetric inference rule does not create an additional derivation.
 
-For example, suppose:
+A single original rating record may participate in many different derivations, and may support multiple branches within one derivation. It is not globally consumed or reserved by the first derivation that uses it.
 
-```text
-Rating1: R(Alice, Post1, philosophy; -0.2)
-Rating2: R(Bob, Post1, philosophy; +0.3)
-```
+### 4.4 All Distinct Valid Derivations Contribute
 
-Rule 1 produces:
+All distinct valid derivations contribute, regardless of their length or the existence of shorter derivations producing the same rating triangle.
 
-```text
-Inference1: R(Alice, Bob, philosophy; -0.06)
-```
+A longer derivation is not discarded merely because a shorter derivation also produces the same rater, target, and destination.
 
-Suppose Alice also has:
-
-```text
-Rating3: R(Alice, Post1, important; +0.5)
-```
-
-Rule 2 produces:
-
-```text
-Inference2: R(Alice, philosophy, important; -0.1)
-```
-
-And Bob has:
-
-```text
-Rating4: R(Bob, Post2, philosophy; +0.7)
-```
-
-Rule 3 combines Inference1 and Rating4:
-
-```text
-Inference3: R(Alice, Post2, philosophy; -0.042)
-```
-
-Rule 4 then combines Inference3 and Inference2:
-
-```text
-Inference4: R(Alice, Post2, important; +0.0042)
-```
-
-Rating1 is used in both branches: it contributes to Inference1 and to Inference2. This is valid. Inference4's strength is calculated by multiplying the strengths of its immediate inputs, `-0.042 × -0.1 = +0.0042`. The shared original record is not removed or deduplicated from either branch.
-
-This preserves the meaning of the intermediate relationships. Alice's negative relationship to Bob concerning `philosophy`, and her negative relationship between `philosophy` and `important`, are both meaningful derived relationships. Their composition produces a positive result.
-
-Two derivations are distinct when they represent different valid structures of inference, even if they share some or all of their original rating records. Swapping the operands of a symmetric inference rule does not create an additional derivation.
-
-### 4.4 All Distinct Acyclic Derivations Contribute
-
-All distinct valid acyclic derivations contribute, regardless of their depth.
-
-A longer derivation is not discarded merely because a shorter derivation also reaches the same user or produces a relationship between the same entities.
-
-This is essential to preserving the distinction between direct trust and inferred affinity. An explicit relationship can provide one path while numerous independent inferred relationships provide additional paths at greater distances.
+This preserves the distinction between direct ratings and inferred evidence. An explicit rating can provide one derivation while numerous independent or overlapping inferred derivations provide additional evidence at greater distances.
 
 For example:
 
-- Alice's direct rating of Bob provides a one-triangle relationship.
-- Two ratings of the same target and category by Alice and Bob provide a derived relationship through Rule 1.
-- A further rating by Bob can extend either relationship to another target.
-- Different valid combinations of these relationships may produce separate derivations of the same resulting rating triangle.
+- Alice's direct rating of Bob provides a derivation of a rating of Bob by Alice.
+- Two ratings of the same target and destination by Alice and Bob provide a separate derivation of an inferred relationship between them.
+- A further rating by Bob can extend either derivation to a rating of another target by Alice.
 
-Each distinct derivation remains a separate contribution. Its strength and distance determine how it is combined during aggregation in Section 5.
+The derivations remain separate contributions. Their distances determine how they are combined during aggregation in Section 5.
 
 There is no shortest-path-only rule, and no single effective relationship is calculated for each ordered pair before aggregation.
 
-### 4.5 Zero-Strength and Retracted Triangles
+### 4.5 Derivation Strength and Distance
+
+The strength of a derivation is calculated recursively.
+
+- An original rating record has its recorded numeric value as its strength.
+- An inference node has a strength equal to the product of the strengths of its two input triangles.
+
+Thus, the strength of a complete derivation is the recursively calculated product implied by all of its inference nodes.
+
+The **distance** of a derivation is the maximum number of inference steps along any branch from its resulting triangle back to an original rating record.
+
+- An original rating record has distance `0`.
+- An inference node whose two inputs have distances `d1` and `d2` has distance `1 + max(d1, d2)`.
+
+Distance therefore measures the length of the longest inferential chain supporting the result, not the number of distinct original records in the derivation.
+
+If a shared original rating supports multiple branches, it may occur at different depths along those branches. The derivation's distance is still determined by its longest branch.
+
+Strength and distance are independent properties: strength is calculated by multiplication, while distance is calculated by maximum branch depth.
+
+### 4.6 Zero-Strength and Retracted Triangles
 
 A zero-strength numeric rating is still a valid rating triangle. It may participate in inference and may form part of a structurally valid derivation.
 
-A derivation whose supporting relationships multiply to zero has zero influence. It contributes neither signed evidence nor influence mass in aggregation, but it must not be treated as though the underlying rating records were absent.
+A derivation whose strength is zero remains a valid derivation and contributes one unit to the count of derivations at its distance layer. Its signed contribution is zero, but it still affects the normalization of that layer during aggregation.
 
 A null-valued record is different. It is a retraction, not a numeric rating. It does not form a triangle, cannot be used as an input to inference, and cannot support a derivation.
 
 If a newer null record supersedes an earlier numeric record, the earlier triangle is no longer part of the current graph.
 
-### 4.6 No Transmission of Derived Graph Data
+### 4.7 No Transmission of Derived Graph Data
 
 Peers exchange signed rating records, not derived triangles, inferred relationships, derivations, or aggregates.
 
@@ -597,115 +583,77 @@ A derived result that depends on any private rating remains private to the clien
 
 ### 5.1 Overview
 
-An aggregate rating estimates how an evaluator regards a target in a particular category, using their own ratings and ratings reachable through the graph.
+An aggregate rating estimates how an evaluator regards a target in a particular category, using all distinct valid derivations of that rating from the evaluator's currently known graph.
 
-The calculation is category-specific. A rating of a target in another category is not direct evidence for the category currently being evaluated, although it may contribute to a valid derivation that carries influence or a rating into the current category.
+The calculation is category-specific. A rating of a target in another category is not direct evidence for the category currently being evaluated, although it may contribute to a valid derivation that carries a rating into the category being evaluated.
 
 No computed aggregate is transmitted as a protocol rating. Each client derives aggregates locally from the rating records and graph it currently knows.
 
-### 5.2 Contribution Derivations
+**Intermediate derived triangles are not aggregated before further inference.** Every valid derivation is propagated through subsequent inference steps with its own strength and distance. α and δ are applied only when calculating the aggregate for the final rater, target, and destination being evaluated.
 
-For an evaluator `A`, target `T`, and category `C`, an aggregate is built from all distinct valid acyclic derivations that establish a rating of `T` in `C` for `A`.
+This is important because aggregating an intermediate triangle could discard information about the separate strengths and distances of its supporting derivations. In particular, opposing derivations that aggregate to zero must remain distinct evidence when propagated further; they must not be collapsed into a zero-strength relationship that erases their evidential contribution.
 
-Each contribution is a derivation graph whose resulting triangle is:
+### 5.2 Contributions
 
-`R(A, T, C; v)`
+For an evaluator `A`, target `T`, and destination `D`, an aggregate is built from all distinct valid derivations that produce a rating triangle:
 
-where `v` is the strength calculated by applying the inference rules recursively from the original rating records at the leaves.
+`R(A, T, D; v)`
 
-A derivation may consist of:
+Each such derivation is one **contribution** to the aggregate.
 
-- A single original rating record, with no inference steps.
-- One inference step combining two original rating records.
-- Multiple inference steps, including branches that converge on a derived triangle.
-- Multiple branches that share one or more original rating records or intermediate derived triangles.
+For each contribution `p`:
 
-An original rating directly issued by the evaluator for the target in the category being evaluated is a contribution with no inference steps.
+- `v_p` is the strength of the resulting rating triangle, calculated recursively by multiplying strengths at each inference step.
+- `d_p` is the derivation's distance, defined as the maximum number of inference steps along any branch from the resulting triangle to an original rating record.
 
-The source rating records are the leaves of the derivation. They must all be current, non-null numeric records. A retracted or superseded record cannot support a derivation.
+A direct rating by the evaluator is a derivation with one original-record leaf and no inference nodes. It therefore has distance `0` and contributes its recorded value.
 
-A derivation must follow the four inference rules in Section 3 at every step. The fact that a set of triangles can be arranged into a structurally plausible result is not sufficient if the required role alignment or inference rule is absent.
+A derivation with one inference step has distance `1` if both inputs are original records. A derivation with deeper branches has a distance equal to its longest branch.
 
-The distance of a contribution is determined by the depth of its derivation, as defined in §5.3.
+Every distinct valid derivation contributes separately, even when multiple derivations produce the same rating triangle or share some of their original evidence.
 
-### 5.3 Derivation Strength, Distance, and Contributions
+The same original rating record may therefore affect an aggregate through multiple derivations. Its strength is included in each derivation's recursively calculated value, and each derivation counts once in its distance layer.
 
-For each contribution derivation `p`:
-
-- `v_p` is the strength of its resulting derived triangle.
-- `d_p` is the maximum number of inference steps along any branch from the resulting triangle back to an original rating record.
-
-The strength is calculated recursively. Every inference step multiplies the strengths of its two immediate input triangles, as specified in §3.4. If an input triangle is itself derived, its already-calculated strength is used as the input.
-
-The same original rating may therefore affect the resulting strength more than once when it contributes through multiple branches. No provenance deduplication is performed during strength calculation.
-
-Distance is calculated structurally:
-
-- An original rating record has depth zero.
-- Each inference step adds one level of depth above its input triangles.
-- The distance of a derived triangle is the greatest depth among its supporting branches.
-
-Equivalently, distance is the length of the longest chain of inference steps from the resulting triangle back to any original rating record.
-
-For example, consider the derivation in §4.3:
-
-- Inference1 is one inference step from Rating1 and Rating2.
-- Inference2 is one inference step from Rating1 and Rating3.
-- Inference3 is one inference step from Inference1 and Rating4.
-- Inference4 is one inference step from Inference3 and Inference2.
-
-Inference4 has distance 3. Its longest branch passes through Inference3 and Inference1 before reaching Rating1 or Rating2. The other branch, through Inference2, is shorter. The shared use of Rating1 does not reduce the depth of the longer branch.
-
-If the derivation consists of a single original rating with no inference steps:
-
-`v_p = rating value`
-
-and:
-
-`d_p = 0`
-
-The contribution's signed evidence is:
-
-`v_p`
-
-Its influence mass is:
-
-`1`
-
-For a derived contribution, its signed evidence is likewise its resulting strength:
-
-`v_p`
-
-Its influence mass is:
-
-`1`
-
-The strength of a derived triangle already incorporates the strengths of all inference steps that produced it. Its influence mass represents one contribution at that derivation's distance; the magnitude of its strength determines the signed evidence.
-
-A current rating may contribute through more than one distinct derivation. Each derivation contributes separately, with its own resulting strength and distance. A source rating is not counted only once after collapsing all derivations that depend on it.
-
-### 5.4 Distance Layers and Aggregation Parameters
+### 5.3 Distance Layers and Aggregation Parameters
 
 Two configurable parameters control aggregation:
 
-- **α (alpha)** controls how the amount of evidence within each distance layer affects that layer's contribution.
+- **α (alpha)** controls how the number of contributions within each distance layer affects that layer's contribution.
 - **δ (delta)** controls how much influence more distant layers receive relative to nearer layers.
 
 Both parameters are in [0, 1].
 
 Increasing α corresponds to giving greater weight to averaging within a layer, rather than allowing large numbers of contributions to accumulate.
 
-Decreasing δ corresponds to giving lesser weight to more distant derivations, rather than treating ratings at every distance with the same weight as the evaluator's own.
+Decreasing δ corresponds to giving lesser weight to more distant derivations, rather than treating evidence at every distance with the same weight as the evaluator's own.
 
-The default client interface should present a single inverse-binding control (increasing α decreases δ, and vice versa); advanced clients may expose α and δ separately, as well as category-specific settings.
+The default client interface should present a single inverse-binding control (increasing α decreases δ, and vice versa); advanced clients may expose α and δ separately.
 
 For each distance layer `d`, calculate:
 
-`S_d = Σ v_p` for all derivations p at distance d
+`S_d = Σ v_p` for all derivations `p` at distance `d`
 
-`W_d = Σ |v_p|` for all derivations p at distance d
+`N_d = number of distinct derivations at distance d`
 
-Here, `S_d` is the signed evidence and `W_d` is the total influence mass at that distance.
+Here, `S_d` is the signed sum of derivation strengths, and `N_d` is the derivation count. Every distinct derivation counts exactly once, regardless of its strength.
+
+Define the set of represented distance layers:
+
+`L = {d | N_d > 0}`
+
+If `L` is empty, there are no valid derivations and the aggregate is null.
+
+For each layer in `L`, calculate:
+
+`C_d = S_d / N_d^α`
+
+Then calculate the shared normalizer:
+
+`M = max(N_d^(1 - α))` over all layers `d` in `L`
+
+Normalize each layer:
+
+`A_d = C_d / M`
 
 Define the distance weight:
 
@@ -713,21 +661,7 @@ Define the distance weight:
 
 `w(d, δ) = δ^d` when `d > 0`
 
-Let `L` be the set of all distance layers satisfying `W_d > 0`.
-
-If `L` is empty, the aggregate is null.
-
-For each layer in `L`, calculate:
-
-`C_d = S_d / W_d^α`
-
-Then calculate the shared normalizer:
-
-`M = max(W_d^(1 - α))` over all layers `d` in `L`
-
-Normalize each layer:
-
-`A_d = C_d / M`
+(For all nonzero `δ`, `δ^d` would be `1` when `d = 0` anyway, but because `δ` can be set to `0` and `0^0` is ambiguous, we specially define `w(d, δ) = 1` in *all* cases where `d = 0`, including when `δ` is set to `0`)
 
 Finally, calculate the aggregate:
 
@@ -735,23 +669,25 @@ Finally, calculate the aggregate:
 
 where both sums include only layers in `L`.
 
-All layers with positive influence mass participate in calculating the shared normalizer, regardless of their distance weight. A layer with zero distance weight contributes nothing directly to the weighted sum, but may still affect the shared normalization.
-
 The shared normalizer is intentional: a large layer can affect the relative influence of all other layers. It is not a separate normalization performed independently for each distance layer.
 
-Only calculate powers for layers where `W_d > 0`; implementations must not rely on `0^0`.
+The shared normalizer is calculated over every represented layer, including layers whose distance weight is zero. A layer with zero distance weight therefore contributes nothing directly to the final weighted sum, but can still affect the shared normalization when `α < 1`.
 
-### 5.5 Parameter Behavior
+Only calculate powers for layers where `N_d > 0`; implementations must not rely on `0^0`.
+
+If the denominator of the final expression is zero, the aggregate is null. This can occur when `δ = 0` and no distance-zero derivation exists, even if more distant derivations are available.
+
+### 5.4 Parameter Behavior
 
 The endpoints of α have useful interpretations:
 
-- **α = 0:** contributions within each represented layer are summed before the shared normalization. Larger layers can exert greater influence because they contain more total evidence.
-- **α = 1:** each represented layer is effectively averaged by its total influence mass before the shared normalization. The shared normalizer is 1, and each represented distance layer receives equal weight before δ is applied.
+- **α = 0:** contributions within each represented layer are summed before the shared normalization. Larger layers can exert greater influence because they contain more derivations.
+- **α = 1:** each represented layer is effectively averaged by its derivation count before the shared normalization. The shared normalizer is 1, and each represented distance layer receives equal weight before δ is applied.
 - **0 < α < 1:** intermediate behavior between summation and averaging.
 
 The endpoints of δ determine distance weighting:
 
-- **δ = 0:** only distance-zero layers contribute directly to the weighted sum. More distant layers still participate in the shared normalizer and can therefore diminish the aggregate when α is less than 1. When α = 1, those distant layers have no effect on the aggregate. If no distance-zero layer exists, the aggregate is null because the final distance-weight denominator is zero.
+- **δ = 0:** only distance-zero evidence contributes directly. If no distance-zero derivation exists, the aggregate is null even if indirect derivations exist.
 - **δ = 1:** every represented distance layer receives equal weight.
 - **0 < δ < 1:** more distant layers receive progressively less weight.
 
@@ -759,20 +695,32 @@ The distance-zero layer has weight 1. The next layer has weight δ, the followin
 
 The protocol permits α = 0 and δ = 0, including their combination. Implementations must handle these values without undefined arithmetic.
 
-### 5.6 Null and Zero Aggregates
+When `δ = 0`, represented layers at positive distances still participate in the shared normalizer. For `α < 1`, they may therefore diminish the final aggregate through normalization even though their direct distance weight is zero. When `α = 1`, the shared normalizer is 1, so those zero-weight layers have no effect on the result.
 
-An aggregate is **null** when no usable contribution exists. This includes cases where:
+### 5.5 Null and Zero Aggregates
+
+An aggregate is **null** when no usable contribution exists under the selected aggregation settings. This includes cases where:
 
 - No relevant current ratings are known.
-- No valid derivation connects the evaluator to any relevant rating.
+- No valid derivation connects the evaluator to a relevant rating.
 - All relevant ratings have been retracted.
-- All available derivations have zero strength.
+- Only derivations at distances with zero final distance weight exist, leaving the final denominator zero.
 
-A numerical aggregate of zero is different: it means usable evidence exists, but the signed contributions balance to neutrality.
+A numerical aggregate of zero is different: it means one or more valid derivations exist and their signed contributions balance to neutrality, or that the available derivations have zero strength.
 
-Null must not be silently converted to a numerical zero in the underlying aggregation result. Clients may substitute zero when performing threshold comparisons, as specified in §5.9.
+In particular, a zero-strength derivation is not discarded. It counts toward `N_d`, and if it is the only derivation in a represented layer, that layer's signed sum is zero but its derivation count is one. The resulting aggregate is numerical zero, not null, provided the final distance-weight denominator is nonzero.
 
-### 5.7 Worked Example
+Likewise, two or more nonzero derivations may cancel in the signed sum while still counting separately in the denominator. For example, contributions of `+1` and `-1` in the same layer produce:
+
+`S_d = 1 - 1 = 0`
+
+`N_d = 2`
+
+This is a numerical zero representing balanced evidence, not an absence of evidence.
+
+Null must not be silently converted to a numerical zero in the underlying aggregation result. Clients may substitute zero when performing threshold comparisons, as specified in §5.8.
+
+### 5.6 Worked Example
 
 The following example is illustrative and non-normative.
 
@@ -786,12 +734,12 @@ Alice has rated `PostY` +0.2 in `important`:
 R(Alice, PostY, important; +0.2)
 ```
 
-This has no inference steps:
+This is a direct derivation:
 
-- `v_p = +0.2`
-- `d_p = 0`
+- Strength: `+0.2`
+- Distance: `0`
 - Signed contribution: `+0.2`
-- Influence mass: `1`
+- Derivation count: `1`
 
 **Explicit trust in Bob**
 
@@ -802,12 +750,12 @@ R(Alice, Bob, important; +1.0)
 R(Bob, PostY, important; +0.5)
 ```
 
-This gives Alice a derivation of a rating of `PostY`:
+This derives a rating of `PostY` by Alice:
 
-- Derived strength `v_p = +1.0 × +0.5 = +0.5`
-- Distance `d_p = 1`
+- Derivation strength: `+1.0 × +0.5 = +0.5`
+- Distance: `1`
 - Signed contribution: `+0.5`
-- Influence mass: `0.5`
+- Derivation count: `1`
 
 **Inferred affinity for Bob**
 
@@ -826,16 +774,16 @@ That inferred relationship can be used in a further derivation through Bob's rat
 R(Bob, PostY, important; +0.5)
 ```
 
-The derivation has:
+The resulting derivation has:
 
-- Derived strength `v_p = +1.0 × +0.8 × +0.5 = +0.4`
-- Distance `d_p = 2`
+- Strength: `+1.0 × +0.8 × +0.5 = +0.4`
+- Distance: `2`
 - Signed contribution: `+0.4`
-- Influence mass: `0.4`
+- Derivation count: `1`
 
 This contribution remains separate from the explicit trust derivation at distance 1. The inferred affinity does not dilute Alice's explicit +1 rating of Bob.
 
-If Alice and Bob had rated many shared posts, each distinct derivation through a shared target and category could contribute separately at its own distance. α and δ determine how those contributions combine with one another and with nearer evidence.
+If Alice and Bob had rated many shared posts, each distinct valid derivation through a shared target and destination could contribute separately at its own distance. α and δ determine how those contributions combine with one another and with nearer evidence.
 
 **Category propagation**
 
@@ -848,12 +796,20 @@ R(Alice, philosophy, important; +0.8)
 
 By Rule 4, these imply a rating of `PostY` in `important` with:
 
-- Derived strength `v_p = +0.9 × +0.8 = +0.72`
-- Distance `d_p = 1`
+- Derivation strength: `+0.9 × +0.8 = +0.72`
+- Distance: `1`
 - Signed contribution: `+0.72`
-- Influence mass: `0.72`
+- Derivation count: `1`
 
 This is another distinct derivation, even though it has the same evaluator, target, and destination as the direct rating and the other derivations.
+
+**Shared evidence in separate branches**
+
+Suppose an original rating record participates in two different inference branches, and those branches are later combined to derive a rating of `PostY`.
+
+The shared record's strength is included in the strength calculation of each branch. When the branches are combined, the two branch strengths are multiplied. The shared record's strength therefore affects the resulting derivation through both branches.
+
+This is intentional. The derivation is not reduced by deduplicating shared provenance, because the original rating played two distinct inferential roles.
 
 **Explicit neutrality**
 
@@ -864,18 +820,18 @@ R(Alice, Bob, important; +1.0)
 R(Bob, PostZ, important; 0)
 ```
 
-The derivation produces:
+The resulting derivation has:
 
-- Derived strength `v_p = +1 × 0 = 0`
-- Distance `d_p = 1`
+- Strength: `+1 × 0 = 0`
+- Distance: `1`
 - Signed contribution: `0`
-- Influence mass: `0`
+- Derivation count: `1`
 
-A zero-strength derivation therefore supplies no influence mass and does not affect the aggregate.
+The zero-strength derivation therefore counts as evidence and moderates the aggregate toward neutrality.
 
-A null-valued current rating of `PostZ` would not produce a derivation at all. It would mean Bob has withdrawn his rating, rather than explicitly expressed neutrality.
+A null-valued current rating of `PostZ` would not contribute at all. It would mean Bob has withdrawn his rating, rather than explicitly expressed neutrality.
 
-### 5.8 Open-World and Provisional Results
+### 5.7 Open-World and Provisional Results
 
 The graph is open-ended. There is no global completeness test, and clients cannot establish that they have discovered every relevant record or derivation.
 
@@ -883,33 +839,37 @@ An aggregate is therefore provisional with respect to the records and graph curr
 
 Discovering a new record may:
 
-- Introduce a new terminal rating contribution.
+- Introduce a new original rating contribution.
 - Introduce a new direct or inferred derivation.
 - Extend an existing derivation through another user or category.
 - Change the strength of a derived triangle.
 - Introduce additional derivations at new distances.
-- Change the influence mass and signed evidence in one or more distance layers.
-- Change aggregates for other targets, categories, or users through further valid derivations.
+- Change the derivation count or signed sum in one or more distance layers.
+- Change aggregates for other targets, destinations, or raters through further valid derivations.
 
-These changes may cascade through multiple graph paths, categories, targets, and users.
+These changes may cascade through multiple derivations, destinations, targets, and raters.
 
 Clients are responsible for invalidating cached results and recomputing derived values when relevant records or relationships change. The protocol does not prescribe a particular caching or recomputation implementation.
 
-The number of possible derivations can grow rapidly as the graph expands. Clients may use resource limits and incremental computation, but a result that omits derivations because of such limits is partial with respect to the currently known graph and should be treated accordingly.
+The number of valid derivations can grow rapidly as the graph expands. Clients may use resource limits and incremental computation, but a result that omits derivations because of such limits is partial with respect to the currently known graph and should be treated accordingly.
 
-Different clients may temporarily calculate different aggregates because they know different portions of the graph or have explored different portions of its derivations. Given the same relevant records, the same set of derivations, and the same settings, conforming clients should calculate the same result, allowing for ordinary floating-point tolerances.
+Different clients may temporarily calculate different aggregates because they know different portions of the graph or have explored different portions of its derivations. Given the same relevant records, the same set of valid derivations, and the same settings, conforming clients should calculate the same result, allowing for ordinary floating-point tolerances.
 
-The mathematical result should not depend on record-discovery order. Implementations should make derivation enumeration, derivation deduplication, and aggregation order-independent apart from negligible floating-point differences.
+The mathematical result should not depend on record-discovery order. Implementations should make derivation enumeration, derivation identity, and aggregation order-independent apart from negligible floating-point differences.
 
-### 5.9 Filtering and Thresholds
+### 5.8 Global Visibility and Threshold
 
-Clients may filter results using aggregate ratings in one or more categories.
+The root category is the universal destination for global visibility and relevance.
+
+A client's global view is determined by the aggregate rating of each candidate target in the root category:
+
+`R(evaluator, target, ""; aggregate)`
 
 The normative default comparison is an inclusive minimum threshold:
 
 `aggregate >= threshold`
 
-Thresholds are in [-1, +1].
+The threshold is in [-1, +1].
 
 For threshold comparisons only, a null aggregate is treated as zero. This does not change the underlying aggregate from null to zero.
 
@@ -936,13 +896,24 @@ Clients may additionally support exclusive comparisons and intervals. Under thos
 - `>= 0` includes both explicit zero and null.
 - `<= 0` includes both explicit zero and null.
 
-When multiple filter categories are selected, the normative default is to combine them with **AND**: a result must satisfy every selected category's threshold. Clients may offer OR or more elaborate Boolean expressions as optional features.
+The global threshold applies to the root-category aggregate. There are no separate protocol-level global filters for individual categories, and no independent set of selected filter categories.
 
-The normative simple interface should use one global threshold for all selected categories. Advanced clients may allow separate thresholds per category.
+A category's rating in the root category expresses its general relevance or desirability. Because categories are targets and category relationships propagate through Rule 4, a positive root rating of a category can cause ratings of targets in that category to contribute positively to their root-category aggregates. A negative root rating can cause them to contribute negatively.
 
-Selecting no filter categories means no category-based filtering.
+For example, a positive rating of `philosophy` in the root category can carry positive ratings in `philosophy` into the root category. A negative rating of `philosophy` in the root category can carry positive ratings in `philosophy` into negative contributions in the root category.
 
-A category with no ratings has a null aggregate and is handled by the same null-as-zero comparison rules. It receives no special exemption from filtering.
+The root category also permits general ratings of users and posts:
+
+- A positive root rating of a user expresses general trust or favor toward that user, and can influence the propagation of that user's ratings through Rule 3.
+- A negative root rating of a user expresses general distrust or disfavor and can reduce or reverse the influence of that user's ratings.
+- A positive root rating of a post directly contributes positive evidence toward its global visibility.
+- A negative root rating of a post directly contributes negative evidence toward its global visibility.
+
+These are all ordinary ratings and inferences. No separate global trust, vote, or category-filter mechanism is required.
+
+Because category preferences are expressed as ordinary ratings in the root category, they can be shared and discovered through the same network and trust graph as other ratings. They are not limited to a user's private client configuration.
+
+A client may provide interfaces for users to discover, rate, and adjust categories in the root category, but those are client presentation choices. The protocol requires only the ordinary rating records and aggregation rules.
 
 ---
 
@@ -952,13 +923,15 @@ A category with no ratings has a null aggregate and is handled by the same null-
 
 Categories are identified by normalized strings. The normalized identifier is globally shared: two users referring to the same normalized name refer to the same category, even if they intended different meanings or use the word differently.
 
-Categories have no owners, creators with privileged control, authoritative definitions, or registration process. A category becomes known when a valid rating record references it as a target or category.
+Categories have no owners, creators with privileged control, authoritative definitions, or registration process. A category is simply the string used to refer to it. It becomes known to a client when a valid rating record references it as a target or destination.
 
 There is no protocol-level alias, translation, or competing-definition mechanism. Users who disagree about whether a category applies to something may express that disagreement through their own ratings.
 
+The empty string `""` is the unique root category identifier. It is the sole exception to the ordinary category normalization rules requiring a nonempty canonical identifier. It does not require a separate creation or registration process; it is simply the unique empty string, with the special root-category semantics defined in this specification.
+
 ### 6.2 Canonical Form
 
-A canonical category identifier:
+An ordinary canonical category identifier:
 
 - Uses Unicode NFKC normalization.
 - Uses locale-independent Unicode case folding.
@@ -966,6 +939,7 @@ A canonical category identifier:
 - Contains only Unicode letters, numbers, combining marks, and hyphens.
 - Has no leading or trailing hyphen.
 - Has no consecutive hyphens.
+- Is not empty.
 
 Whitespace runs in user input are normalized to a single hyphen. Consecutive hyphens are collapsed, and leading or trailing hyphens are removed.
 
@@ -982,7 +956,7 @@ Examples of intended normalization include:
 | `will.i.am` | `will-i-am` |
 | `bits&bobs` | `bits-bobs` |
 
-A category identifier that cannot be normalized to a valid canonical form must be rejected.
+The empty string is valid only as the root category identifier. A category identifier that cannot be normalized to a valid canonical form must be rejected.
 
 ### 6.3 Unicode Version Compatibility
 
@@ -992,15 +966,19 @@ Clients must validate category identifiers using a Unicode version they support.
 
 If a client cannot validate an identifier under any Unicode version it supports, it must reject the record rather than store or forward an unvalidated category identifier.
 
-Clients must not silently rewrite a received record's category identifier during validation.
+Clients must not silently rewrite a received record's destination category identifier during validation.
 
 Consequently, older clients may reject identifiers that use characters or normalization behavior introduced in newer Unicode versions, while newer clients may be able to validate, retain, and share those records. This compatibility limitation does not require every client to adopt a single Unicode version in advance.
 
+The empty string root identifier is not affected by Unicode normalization or case folding.
+
 ### 6.4 Canonical Record Values
 
-Rating records must contain canonical category identifiers. Clients should normalize user input before creating records.
+Rating records must contain canonical category identifiers as destinations. Clients should normalize user input before creating records.
 
-Receivers must validate canonical identifiers and reject noncanonical values rather than silently normalizing them. This ensures that all clients interpret an accepted record as referring to the same category.
+Receivers must validate canonical identifiers and reject noncanonical values rather than silently normalizing them. This ensures that all clients interpret an accepted record as referring to the same destination category.
+
+The empty string is valid as the root destination and must be preserved exactly.
 
 ### 6.5 No Encoded Hierarchy
 
@@ -1011,6 +989,8 @@ A category relationship must be expressed through an ordinary rating of one cate
 Clients may present related categories in nested or hierarchical interfaces, but those structures are derived from graph relationships and remain client-side presentation choices.
 
 There is no protocol-defined containment relation, taxonomy depth, parent category, or exclusive parent-child structure. A category may be related to multiple other categories, and those relationships may be bidirectionally positive or negative (such as `A iff B` or `A xor B`), or directed (such as `if A then B` without implying `if B then A`).
+
+The root category does not introduce a separate hierarchy. It is simply the special global category in which general preferences and evaluations are expressed.
 
 ---
 
@@ -1024,7 +1004,7 @@ The rating protocol defines the individual rating record as its wire-format unit
 
 Transport implementations may batch multiple rating records into a message or response for efficiency. Such batching is a transport-level choice and does not change the identity, provenance, visibility, or validation requirements of the individual records.
 
-Every record retains its original `rater` and signature so that recipients can verify its authenticity. A recipient determines the current record for each `(rater, target, category)` tuple according to §2.3.
+Every record retains its original `rater` and signature so that recipients can verify its authenticity. A recipient determines the current record for each `(rater, target, destination)` tuple according to §2.3.
 
 No batch or transport representation may contain a record with `public: false`. Private ratings and derived information that depends on them must never be transmitted.
 
